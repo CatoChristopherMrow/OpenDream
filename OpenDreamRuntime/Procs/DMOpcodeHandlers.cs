@@ -277,7 +277,7 @@ namespace OpenDreamRuntime.Procs {
                 // Turfs are special. They're never created outside of map initialization
                 // So instead this will replace an existing turf's type and return that same turf
                 DreamValue loc = newArguments.GetArgument(0);
-                if (!loc.TryGetValueAsDreamObject<DreamObjectTurf>(out var turf) || turf == null) {
+                if (!loc.TryGetValueAsDreamObject<DreamObjectTurf>(out var turf)) {
                     ThrowInvalidTurfLoc(loc);
                     return ProcStatus.Continue;
                 }
@@ -1690,8 +1690,8 @@ namespace OpenDreamRuntime.Procs {
                     if (instance == null)
                         throw new Exception("Cannot call src proc without an instance");
 
-                    var procName = state.ResolveString(procRef.Value) ?? string.Empty;
-                    if (!instance.TryGetProc(procName, out var srcProc) || srcProc == null)
+                    var procName = state.ResolveString(procRef.Value);
+                    if (!instance.TryGetProc(procName, out var srcProc))
                         throw new Exception($"Type {instance.ObjectDefinition.Type} has no proc called \"{procName}\"");
 
                     proc = srcProc;
@@ -2521,15 +2521,15 @@ namespace OpenDreamRuntime.Procs {
                 throw new Exception($"Invalid var for issaved() call: {key}");
             }
 
-            if (owner.TryGetValueAsDreamObject(out DreamObject? dreamObject) && dreamObject != null) {
+            if (owner.TryGetValueAsDreamObject<DreamObject>(out var dreamObject)) {
                 state.Push(dreamObject.IsSaved(property) ? DreamValue.True : DreamValue.False);
                 return ProcStatus.Continue;
             }
 
             DreamObjectDefinition objectDefinition;
-            if (owner.TryGetValueAsDreamObject(out var dreamObject2) && dreamObject2 != null) {
+            if (owner.TryGetValueAsDreamObject<DreamObject>(out var dreamObject2)) {
                 objectDefinition = dreamObject2.ObjectDefinition;
-            } else if (owner.TryGetValueAsType(out var type) && type != null) {
+            } else if (owner.TryGetValueAsType(out var type)) {
                 objectDefinition = type.ObjectDefinition;
             } else {
                 throw new Exception($"Invalid owner for issaved() call {owner}");

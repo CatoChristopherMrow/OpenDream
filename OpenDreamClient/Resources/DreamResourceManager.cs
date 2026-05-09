@@ -308,6 +308,7 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
         lock (_browseRscLock) {
             _activeBrowseRscRequests.Remove(filename);
         }
+
         _sawmill.Error(requestedSpeculatively
             ? $"Cache was ensured for a file ({filename}) that does not exist in cache and did not arrive after requesting it from the server."
             : $"Cache was ensured for a file ({filename}) that does not exist in cache and is not requested. Probably somebody called browse() without browse_rsc() first.");

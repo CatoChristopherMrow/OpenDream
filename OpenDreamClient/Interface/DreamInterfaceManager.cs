@@ -152,9 +152,11 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
     }
 
     private void RunOnMainThread(Func<Task> callback) {
-        _taskManager.RunOnMainThread(async () => {
+        _taskManager.RunOnMainThread(() => {
             try {
-                await callback();
+                _ = callback().ContinueWith(task => {
+                    _sawmill.Error($"Exception while handling interface network message on the main thread: {task.Exception}");
+                }, TaskContinuationOptions.OnlyOnFaulted);
             } catch (Exception e) {
                 _sawmill.Error($"Exception while handling interface network message on the main thread: {e}");
             }

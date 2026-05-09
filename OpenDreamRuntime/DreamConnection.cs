@@ -405,7 +405,7 @@ public sealed partial class DreamConnection {
         var task = MakePromptTask(out var promptId);
         var msg = new MsgWinGet() {
             PromptId = promptId,
-            ControlId = controlId ?? string.Empty,
+            ControlId = controlId,
             QueryValue = queryValue
         };
 

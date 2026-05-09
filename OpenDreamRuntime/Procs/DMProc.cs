@@ -1288,11 +1288,6 @@ public sealed class DMProcState : ProcState {
                     if (proc.OwningType == _state.Proc.ObjectTree.MutableAppearance && proc.Name == "New")
                         proc = _state.Proc.DreamManager.ImageConstructor;
 
-                    if (proc == null)
-                        throw new Exception("Cannot use an arglist here");
-                    if (argList == null)
-                        return new DreamProcArguments();
-
                     DreamProc targetProc = proc ?? throw new Exception("Cannot use an arglist here");
                     var listValues = argList.EnumerateValues().ToList();
                     var arguments = new DreamValue[Math.Max(listValues.Count, targetProc.ArgumentNames?.Count ?? 0)];
