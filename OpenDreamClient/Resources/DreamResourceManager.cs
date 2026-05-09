@@ -52,6 +52,11 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
 
     private readonly HashSet<string> _activeBrowseRscRequests = new();
 
+    private static string NormalizeCacheFilename(string filename) {
+        // BYOND drops directory components for browse_rsc() cache filenames.
+        return new ResPath(filename).Filename;
+    }
+
     public void Initialize() {
         _sawmill = Logger.GetSawmill("opendream.res");
         _mainThreadId = Environment.CurrentManagedThreadId;
@@ -83,23 +88,26 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
     }
 
     private void RxBrowseResource(MsgBrowseResource message) {
-        _sawmill.Verbose($"Received cache check for {message.Filename} hash: {BitConverter.ToString(message.DataHash)}");
+        var filename = NormalizeCacheFilename(message.Filename);
+        var cacheFilePath = GetCacheFilePath(filename);
+
+        _sawmill.Verbose($"Received cache check for {filename} hash: {BitConverter.ToString(message.DataHash)}");
         EnsureCacheDirectory();
-        if(_resourceManager.UserData.Exists(GetCacheFilePath(message.Filename)) && GetFileHash(GetCacheFilePath(message.Filename)).SequenceEqual(message.DataHash)){
-            _sawmill.Verbose($"Cache hit for {message.Filename}");
+        if(_resourceManager.UserData.Exists(cacheFilePath) && GetFileHash(cacheFilePath).SequenceEqual(message.DataHash)){
+            _sawmill.Verbose($"Cache hit for {filename}");
         } else {
-            if (_activeBrowseRscRequests.Contains(message.Filename)) //we've already requested it, don't need to do it again
+            if (_activeBrowseRscRequests.Contains(filename)) //we've already requested it, don't need to do it again
                 return;
 
-            if (_resourceManager.UserData.Exists(GetCacheFilePath(message.Filename))) {
-                _sawmill.Debug($"Cache hit for {message.Filename} but hashes did not match (hash: {BitConverter.ToString(GetFileHash(GetCacheFilePath(message.Filename)))}). Re-requesting!");
-                _resourceManager.UserData.Delete(GetCacheFilePath(message.Filename));
+            if (_resourceManager.UserData.Exists(cacheFilePath)) {
+                _sawmill.Debug($"Cache hit for {filename} but hashes did not match (hash: {BitConverter.ToString(GetFileHash(cacheFilePath))}). Re-requesting!");
+                _resourceManager.UserData.Delete(cacheFilePath);
             } else {
-                _sawmill.Debug($"Cache miss for {message.Filename}, requesting from server.");
+                _sawmill.Debug($"Cache miss for {filename}, requesting from server.");
             }
 
-            _activeBrowseRscRequests.Add(message.Filename);
-            _netManager.ServerChannel?.SendMessage(new MsgBrowseResourceRequest { Filename = message.Filename });
+            _activeBrowseRscRequests.Add(filename);
+            _netManager.ServerChannel?.SendMessage(new MsgBrowseResourceRequest { Filename = filename });
         }
     }
 
@@ -111,12 +119,14 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
     }
 
     private void RxBrowseResourceResponse(MsgBrowseResourceResponse message) {
-        if (_activeBrowseRscRequests.Contains(message.Filename)) {
-            _activeBrowseRscRequests.Remove(message.Filename);
+        var filename = NormalizeCacheFilename(message.Filename);
+
+        if (_activeBrowseRscRequests.Contains(filename)) {
+            _activeBrowseRscRequests.Remove(filename);
             EnsureCacheDirectory();
-            CreateCacheFile(message.Filename, message.Data);
+            CreateCacheFile(filename, message.Data);
         } else {
-            _sawmill.Error($"Received a browse_rsc response for a file we didn't ask for: {message.Filename}");
+            _sawmill.Error($"Received a browse_rsc response for a file we didn't ask for: {filename}");
         }
     }
 
@@ -231,14 +241,14 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
     public ResPath GetCacheFilePath(string filename) {
         EnsureCacheDirectory();
 
-        return _cacheDirectory / new ResPath(filename).ToRelativePath();
+        return _cacheDirectory / NormalizeCacheFilename(filename);
     }
 
     public ResPath CreateCacheFile(string filename, string data) {
         EnsureCacheDirectory();
 
         // in BYOND when filename is a path everything except the filename at the end gets ignored - meaning all resource files end up directly in the cache folder
-        var path = _cacheDirectory / new ResPath(filename).Filename;
+        var path = GetCacheFilePath(filename);
         _resourceManager.UserData.WriteAllText(path, data);
         return new ResPath(filename);
     }
@@ -247,7 +257,7 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
         EnsureCacheDirectory();
 
         // in BYOND when filename is a path everything except the filename at the end gets ignored - meaning all resource files end up directly in the cache folder
-        var path = _cacheDirectory / new ResPath(filename).Filename;
+        var path = GetCacheFilePath(filename);
         _resourceManager.UserData.WriteAllBytes(path, data);
         return new ResPath(filename);
     }
@@ -259,23 +269,37 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
     /// <param name="timeoutSeconds">how long to block for while waiting for the resource. Default 5 seconds.</param>
     /// <returns></returns>
     public bool EnsureCacheFile(string filename, int timeoutSeconds = 5) {
+        filename = NormalizeCacheFilename(filename);
         var actualPath = GetCacheFilePath(filename);
         if (_resourceManager.UserData.Exists(actualPath)) {
             return true;
-        } else {
-            if (_activeBrowseRscRequests.Contains(actualPath.Filename)) {
-                //block until the file arrives for like 5 seconds, then give up
-                DateTime thresholdTime = DateTime.Now.AddSeconds(timeoutSeconds);
-                while (!_resourceManager.UserData.Exists(actualPath) && DateTime.Now < thresholdTime) {
-                    _netManager.ProcessPackets(); //todo this should be sleep
-                }
-
-                return _resourceManager.UserData.Exists(actualPath);
-            } else {
-                _sawmill.Error($"Cache was ensured for a file ({filename}) that does not exist in cache and is not requested. Probably somebody called browse() without browse_rsc() first.");
-                return false;
-            }
         }
+
+        var requestedSpeculatively = false;
+        if (!_activeBrowseRscRequests.Contains(filename)) {
+            // The embedded browser can request subresources before the browse_rsc()
+            // announcement packet has been processed locally. Ask the server; it
+            // will only answer if this file was actually permitted.
+            _activeBrowseRscRequests.Add(filename);
+            requestedSpeculatively = true;
+            _netManager.ServerChannel?.SendMessage(new MsgBrowseResourceRequest { Filename = filename });
+        }
+
+        //block until the file arrives for like 5 seconds, then give up
+        var waitSeconds = requestedSpeculatively ? Math.Min(timeoutSeconds, 1) : timeoutSeconds;
+        DateTime thresholdTime = DateTime.Now.AddSeconds(waitSeconds);
+        while (!_resourceManager.UserData.Exists(actualPath) && DateTime.Now < thresholdTime) {
+            _netManager.ProcessPackets(); //todo this should be sleep
+        }
+
+        if (_resourceManager.UserData.Exists(actualPath))
+            return true;
+
+        _activeBrowseRscRequests.Remove(filename);
+        _sawmill.Error(requestedSpeculatively
+            ? $"Cache was ensured for a file ({filename}) that does not exist in cache and did not arrive after requesting it from the server."
+            : $"Cache was ensured for a file ({filename}) that does not exist in cache and is not requested. Probably somebody called browse() without browse_rsc() first.");
+        return false;
     }
 
     private DreamResource? GetCachedResource(int resourceId) {

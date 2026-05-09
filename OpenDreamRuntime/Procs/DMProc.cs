@@ -59,21 +59,28 @@ public sealed class DMProc : DreamProc {
     public (string Source, int Line) GetSourceAtOffset(int offset) {
         if(SourceInfo.Count == 0)
             return ("<No Source Attached>",0);
-        SourceInfoJson current = SourceInfo[0];
-        string source = ObjectTree.Strings[current.File!.Value];
 
-        int i = 0;
-        do {
-            var next = SourceInfo[i++];
+        SourceInfoJson current = SourceInfo[0];
+        string source = GetSourceFileName(current.File);
+
+        for (int i = 0; i < SourceInfo.Count; i++) {
+            var next = SourceInfo[i];
             if (next.Offset > offset)
                 break;
 
             current = next;
             if (current.File != null)
-                source = ObjectTree.Strings[current.File.Value];
-        } while (i < SourceInfo.Count);
+                source = GetSourceFileName(current.File);
+        }
 
         return (source, current.Line);
+    }
+
+    private string GetSourceFileName(int? fileId) {
+        if (fileId is null || fileId < 0 || fileId >= ObjectTree.Strings.Count)
+            return "<No Source Attached>";
+
+        return ObjectTree.Strings[fileId.Value];
     }
 
     /// <summary>
@@ -1027,6 +1034,9 @@ public sealed class DMProcState : ProcState {
 
     [MustDisposeResource]
     public DreamValue DereferenceField(DreamValue owner, string field) {
+        if (owner.IsDeletedDreamObject)
+            return DreamValue.Null;
+
         if (owner.TryGetValueAsDreamObject<DreamObject>(out var ownerObj)) {
             if (!ownerObj.TryGetVariable(field, out var fieldValue))
                 ThrowTypeHasNoField(field, ownerObj);

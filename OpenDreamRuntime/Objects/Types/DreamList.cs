@@ -188,14 +188,16 @@ public class DreamList : DreamObject, IDreamList {
 
     public virtual void SetValue(DreamValue key, DreamValue value, bool allowGrowth = false) {
         if (key.TryGetValueAsInteger(out int keyInteger)) {
-            value.IncRef();
+            if (keyInteger < 1)
+                return;
 
-            if (allowGrowth && keyInteger == _values.Count + 1) {
-                _values.Add(value);
-            } else {
-                _values[keyInteger - 1].DecRef();
-                _values[keyInteger - 1] = value;
+            while (keyInteger > _values.Count) {
+                _values.Add(DreamValue.Null);
             }
+
+            value.IncRef();
+            _values[keyInteger - 1].DecRef();
+            _values[keyInteger - 1] = value;
         } else {
             if (!ContainsValue(key)) {
                 _values.Add(key);
@@ -343,9 +345,12 @@ public class DreamList : DreamObject, IDreamList {
             return true;
         }
 
-        // Note that invalid vars on /list will give null and not error in BYOND
-        // We don't replicate that
-        return base.TryGetVar(varName, out value);
+        if (!base.TryGetVar(varName, out value)) {
+            // Invalid vars on /list give null instead of erroring in BYOND.
+            value = DreamValue.Null;
+        }
+
+        return true;
     }
 
     protected override void SetVar(string varName, DreamValue value) {

@@ -133,6 +133,11 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
         get => Type == DreamValueType.DreamObject && (_refValue == null || Unsafe.As<DreamObject>(_refValue).Deleted);
     }
 
+    public bool IsDeletedDreamObject {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => Type == DreamValueType.DreamObject && _refValue is DreamObject { Deleted: true };
+    }
+
     public readonly override string ToString() {
         if (Type == DreamValueType.Float)
             return _floatValue.ToString(CultureInfo.InvariantCulture);
@@ -299,7 +304,7 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
     }
 
     public readonly bool TryGetValueAsDreamObject<T>([NotNullWhen(true)] out T? dreamObject) where T : DreamObject {
-        if (_refValue is T dreamObjectValue) {
+        if (_refValue is T dreamObjectValue && !dreamObjectValue.Deleted) {
             dreamObject = dreamObjectValue;
             return true;
         }

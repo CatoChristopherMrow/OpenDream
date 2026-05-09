@@ -116,9 +116,8 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
     }
 
     protected override void Draw(IRenderHandle handle) {
-        EnsureViewportCreated();
-
-        DebugTools.AssertNotNull(_viewport);
+        if (!EnsureViewportCreated())
+            return;
 
         _viewport!.Render();
 
@@ -147,9 +146,7 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
 
     // Draw box in pixel coords to draw the viewport at.
     public UIBox2i GetDrawBox() {
-        DebugTools.AssertNotNull(_viewport);
-
-        var vpSize = _viewport!.Size;
+        var vpSize = _viewport?.Size ?? new Vector2i(Math.Max(ViewportSize.X, 1), Math.Max(ViewportSize.Y, 1));
         var ourSize = (Vector2)PixelSize;
 
         if (FixedStretchSize == null) {
@@ -219,7 +216,8 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
         if (_eye == null)
             return default;
 
-        EnsureViewportCreated();
+        if (!EnsureViewportCreated())
+            return default;
 
         Matrix3x2.Invert(LocalToScreenMatrix(), out var matrix);
         coords = Vector2.Transform(coords, matrix);
@@ -231,7 +229,8 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
         if (_eye == null)
             return default;
 
-        EnsureViewportCreated();
+        if (!EnsureViewportCreated())
+            return default;
 
         Matrix3x2.Invert(GetLocalToScreenMatrix(), out var matrix);
         coords = Vector2.Transform(coords, matrix);
@@ -246,7 +245,8 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
         if (_eye == null)
             return default;
 
-        EnsureViewportCreated();
+        if (!EnsureViewportCreated())
+            return default;
 
         var vpLocal = _viewport!.WorldToLocal(map);
 
@@ -271,21 +271,28 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
         return scale * translate;
     }
 
-    private void EnsureViewportCreated() {
+    private bool EnsureViewportCreated() {
+        if (ViewportSize.X <= 0 || ViewportSize.Y <= 0 || PixelSize.X <= 0 || PixelSize.Y <= 0)
+            return false;
+
         if (_viewport == null) {
             RegenerateViewport();
         }
 
         DebugTools.AssertNotNull(_viewport);
+        return true;
     }
 
     public Matrix3x2 GetWorldToScreenMatrix() {
-        EnsureViewportCreated();
+        if (!EnsureViewportCreated())
+            return Matrix3x2.Identity;
+
         return _viewport!.GetWorldToLocalMatrix() * GetLocalToScreenMatrix();
     }
 
     public Matrix3x2 GetLocalToScreenMatrix() {
-        EnsureViewportCreated();
+        if (!EnsureViewportCreated())
+            return Matrix3x2.Identity;
 
         var drawBox = GetDrawBox();
         var scaleFactor = drawBox.Size / (Vector2)_viewport!.Size;

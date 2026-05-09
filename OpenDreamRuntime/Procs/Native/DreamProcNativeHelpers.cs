@@ -564,6 +564,9 @@ internal static partial class DreamProcNativeHelpers {
     /// </summary>
     public static DreamObjectTurf? GetStep(AtomManager atomManager, IDreamMapManager mapManager, DreamObjectAtom loc,
         AtomDirection dir) {
+        if (loc.Deleted)
+            return null;
+
         var dirInt = (int)dir;
         var locPos = atomManager.GetAtomPosition(loc);
 

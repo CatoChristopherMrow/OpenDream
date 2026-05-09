@@ -10,6 +10,7 @@ using OpenDreamShared.Dream;
 using OpenDreamShared.Network.Messages;
 using Robust.Shared.Enums;
 using Robust.Shared.Player;
+using Robust.Shared.Utility;
 using SpaceWizards.Sodium;
 
 namespace OpenDreamRuntime;
@@ -88,6 +89,11 @@ public sealed partial class DreamConnection {
     private DreamObjectMob? _mob;
 
     private readonly ISawmill _sawmill = Logger.GetSawmill("opendream.connection");
+
+    private static string NormalizeBrowseRscFilename(string filename) {
+        // BYOND's browse_rsc() cache uses the final filename even if a path was supplied.
+        return new ResPath(filename).Filename;
+    }
 
     public string? SelectedStatPanel {
         get => _selectedStatPanel;
@@ -438,6 +444,8 @@ public sealed partial class DreamConnection {
         if (resource.ResourceData == null)
             return;
 
+        filename = NormalizeBrowseRscFilename(filename);
+
         var msg = new MsgBrowseResource() {
             Filename = filename,
             DataHash = CryptoGenericHashBlake2B.Hash(32, resource.ResourceData!, ReadOnlySpan<byte>.Empty)
@@ -448,6 +456,8 @@ public sealed partial class DreamConnection {
     }
 
     public void HandleBrowseResourceRequest(string filename) {
+        filename = NormalizeBrowseRscFilename(filename);
+
         if(_permittedBrowseRscFiles.TryGetValue(filename, out var dreamResource)) {
             var msg = new MsgBrowseResourceResponse() {
                 Filename = filename,
