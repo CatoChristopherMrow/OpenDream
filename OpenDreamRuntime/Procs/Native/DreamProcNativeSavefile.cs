@@ -142,4 +142,16 @@ internal static class DreamProcNativeSavefile {
         savefile.Flush();
         return DreamValue.Null;
     }
+
+    [DreamProc("Lock")]
+    public static DreamValue NativeProc_Lock(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        var savefile = (DreamObjectSavefile)src!;
+        return savefile.TryLock() ? DreamValue.True : DreamValue.False;
+    }
+
+    [DreamProc("Unlock")]
+    public static DreamValue NativeProc_Unlock(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        var savefile = (DreamObjectSavefile)src!;
+        return savefile.Unlock() ? DreamValue.True : DreamValue.False;
+    }
 }

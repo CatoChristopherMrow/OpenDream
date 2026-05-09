@@ -63,6 +63,7 @@ public sealed class DreamObjectSavefile : DreamObject {
     /// basically a global database of savefile contents, which each savefile datum points to - this preserves state between savefiles and reduces memory usage
     /// </summary>
     private static readonly Dictionary<string, SfDreamJsonValue> SavefileDirectories = new();
+    private static readonly Dictionary<string, DreamObjectSavefile> SavefileLocks = new();
 
     /// <summary>
     /// The current savefile data holder - the root of the savefile tree
@@ -236,6 +237,8 @@ public sealed class DreamObjectSavefile : DreamObject {
     }
 
     public void Close() {
+        Unlock();
+
         // We need to avoid Flush() recreating a nonexistent file
         if (File.Exists(Resource!.ResourcePath)) Flush();
         if (_isTemporary && Resource?.ResourcePath != null) {
@@ -262,6 +265,28 @@ public sealed class DreamObjectSavefile : DreamObject {
     public void Flush() {
         Resource!.Clear();
         Resource!.Output(new DreamValue(JsonSerializer.Serialize(_rootNode)));
+    }
+
+    public bool TryLock() {
+        if (Resource?.ResourcePath is not { } path)
+            return false;
+
+        if (SavefileLocks.TryGetValue(path, out var lockOwner) && lockOwner != this)
+            return false;
+
+        SavefileLocks[path] = this;
+        return true;
+    }
+
+    public bool Unlock() {
+        if (Resource?.ResourcePath is not { } path)
+            return false;
+
+        if (!SavefileLocks.TryGetValue(path, out var lockOwner) || lockOwner != this)
+            return false;
+
+        SavefileLocks.Remove(path);
+        return true;
     }
 
     /// <summary>
