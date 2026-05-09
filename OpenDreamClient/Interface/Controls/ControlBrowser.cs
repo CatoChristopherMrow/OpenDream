@@ -28,6 +28,7 @@ internal sealed partial class ControlBrowser : InterfaceControl {
         { "js", "application/javascript" },
         { "json", "application/json" },
         { "ttf", "font/ttf" },
+        { "woff2", "font/woff2" },
         { "txt", "text/plain" }
     };
 
@@ -149,7 +150,10 @@ internal sealed partial class ControlBrowser : InterfaceControl {
                 Stream stream;
                 HttpStatusCode status;
                 var path = new ResPath(newUri.AbsolutePath);
-                if (!_dreamResource.EnsureCacheFile(newUri.AbsolutePath)) {
+                if (path.Filename.Equals("favicon.ico", StringComparison.OrdinalIgnoreCase)) {
+                    stream = Stream.Null;
+                    status = HttpStatusCode.NotFound;
+                } else if (!_dreamResource.EnsureCacheFile(newUri.AbsolutePath)) {
                     stream = Stream.Null;
                     status = HttpStatusCode.NotFound;
                 } else {

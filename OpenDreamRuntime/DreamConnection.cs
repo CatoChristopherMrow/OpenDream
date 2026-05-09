@@ -1,3 +1,4 @@
+using System.IO;
 using System.Threading.Tasks;
 using System.Web;
 using DMCompiler.Bytecode;
@@ -452,6 +453,11 @@ public sealed partial class DreamConnection {
         };
         _permittedBrowseRscFiles[filename] = resource;
 
+        if (!string.IsNullOrEmpty(resource.ResourcePath)) {
+            var resourceFilename = NormalizeBrowseRscFilename(Path.GetFileName(resource.ResourcePath));
+            _permittedBrowseRscFiles.TryAdd(resourceFilename, resource);
+        }
+
         Session?.Channel.SendMessage(msg);
     }
 
@@ -465,12 +471,22 @@ public sealed partial class DreamConnection {
             };
             Session?.Channel.SendMessage(msg);
         } else {
-            _sawmill.Error($"Client({Session}) requested a browse_rsc file they had not been permitted to request ({filename}).");
+            _sawmill.Error($"Client({Session}) requested an unpermitted browse_rsc file ({filename}).");
         }
     }
 
     public void Browse(string? body, string? options) {
+        Browse(body, null, options);
+    }
+
+    public void Browse(DreamResource body, string? options) {
+        Browse(null, body.ResourceData, options);
+    }
+
+    private void Browse(string? body, byte[]? bodyData, string? options) {
         string? window = null;
+        string? file = null;
+        bool display = true;
         Vector2i size = (480, 480);
 
         if (options != null) {
@@ -484,6 +500,10 @@ public sealed partial class DreamConnection {
 
                     if (key == "window") {
                         window = value;
+                    } else if (key == "file") {
+                        file = value;
+                    } else if (key == "display") {
+                        display = value != "0" && !value.Equals("false", StringComparison.OrdinalIgnoreCase);
                     } else if (key == "size") {
                         string[] sizeSeparated = value.Split("x", 2);
 
@@ -496,7 +516,10 @@ public sealed partial class DreamConnection {
         var msg = new MsgBrowse() {
             Size = size,
             Window = window,
-            HtmlSource = body
+            File = file,
+            Display = display,
+            HtmlSource = body,
+            BodyData = bodyData
         };
 
         Session?.Channel.SendMessage(msg);

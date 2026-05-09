@@ -88,8 +88,7 @@ namespace OpenDreamRuntime {
                 case "invisibility":
                     return new DreamValue(Invisibility);
                 case "hidden":
-                    Logger.GetSawmill("opendream.dmproc").Warning("The 'hidden' field on verbs will always return null.");
-                    return DreamValue.Null;
+                    return new DreamValue((Attributes & ProcAttributes.Hidden) == ProcAttributes.Hidden ? 1 : 0);
                 default:
                     throw new Exception($"Cannot get field \"{field}\" from {OwningType}.{Name}()");
             }

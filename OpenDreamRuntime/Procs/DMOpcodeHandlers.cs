@@ -2647,9 +2647,11 @@ namespace OpenDreamRuntime.Procs {
                 throw new Exception($"Invalid browse() recipient: expected mob, client, or world, got {receiver}");
             }
 
+            DreamResource? browseResource = null;
             string? browseValue;
             if (bodyStack.TryGetValueAsDreamResource(out var resource)) {
-                browseValue = resource.ReadAsString();
+                browseResource = resource;
+                browseValue = null;
             } else if (bodyStack.TryGetValueAsString(out browseValue) || bodyStack.IsNull) {
                 // Got it.
             } else {
@@ -2657,7 +2659,10 @@ namespace OpenDreamRuntime.Procs {
             }
 
             foreach (DreamConnection client in clients) {
-                client.Browse(browseValue, options);
+                if (browseResource != null)
+                    client.Browse(browseResource, options);
+                else
+                    client.Browse(browseValue, options);
             }
 
             return ProcStatus.Continue;

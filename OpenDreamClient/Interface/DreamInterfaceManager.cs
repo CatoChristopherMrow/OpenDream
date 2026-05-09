@@ -153,14 +153,16 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
 
     private void RunOnMainThread(Func<Task> callback) {
         _taskManager.RunOnMainThread(() => {
-            try {
-                _ = callback().ContinueWith(task => {
-                    _sawmill.Error($"Exception while handling interface network message on the main thread: {task.Exception}");
-                }, TaskContinuationOptions.OnlyOnFaulted);
-            } catch (Exception e) {
-                _sawmill.Error($"Exception while handling interface network message on the main thread: {e}");
-            }
+            _ = RunAsyncCallback(callback);
         });
+    }
+
+    private async Task RunAsyncCallback(Func<Task> callback) {
+        try {
+            await callback();
+        } catch (Exception e) {
+            _sawmill.Error($"Exception while handling interface network message on the main thread: {e}");
+        }
     }
 
     private void RxUpdateStatPanels(MsgUpdateStatPanels message) {
@@ -243,14 +245,17 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
     private void RxBrowse(MsgBrowse pBrowse) {
         var window = pBrowse.Window;
         var htmlSource = pBrowse.HtmlSource;
+        var bodyData = pBrowse.BodyData;
         var size = pBrowse.Size;
-        RunOnMainThread(() => Browse(window, htmlSource, size));
+        var file = pBrowse.File;
+        var display = pBrowse.Display;
+        RunOnMainThread(() => Browse(window, htmlSource, bodyData, size, file, display));
     }
 
-    private void Browse(string? windowId, string? htmlSource, Vector2i size) {
+    private void Browse(string? windowId, string? htmlSource, byte[]? bodyData, Vector2i size, string? fileName = null, bool display = true) {
         var referencedElement = (windowId != null) ? FindElementWithId(windowId) : DefaultWindow;
 
-        if (htmlSource == null && referencedElement != null) {
+        if (htmlSource == null && bodyData == null && referencedElement != null) {
             // Closing the referenced window or browser
 
             if (referencedElement is ControlWindow window) {
@@ -259,8 +264,14 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
                 // TODO: What does "closing" the browser mean? Redirect to a blank page or remove the control entirely?
                 browser.SetFileSource(null);
             }
-        } else if (htmlSource != null) {
-            var htmlFileName = $"browse_{windowId}_{_random.Next()}"; // TODO: Possible collisions and explicit file names
+        } else if (htmlSource != null || bodyData != null) {
+            var htmlFileName = fileName ?? $"browse_{windowId}_{_random.Next()}.html"; // TODO: Possible collisions
+            var cacheFile = bodyData != null
+                ? _dreamResource.CreateCacheFile(htmlFileName, bodyData)
+                : _dreamResource.CreateCacheFile(htmlFileName, htmlSource!);
+            if (!display)
+                return;
+
             ControlBrowser? outputBrowser = referencedElement as ControlBrowser;
 
             if (outputBrowser == null) {
@@ -291,7 +302,6 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
                 return;
             }
 
-            var cacheFile = _dreamResource.CreateCacheFile(htmlFileName + ".html", htmlSource);
             outputBrowser.SetFileSource(cacheFile);
         }
     }
@@ -763,10 +773,16 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
                     continue;
 
                 string? elementId = winSet.Element ?? elementOverride;
+                if (string.IsNullOrEmpty(elementId))
+                    elementId = null;
 
                 if (elementId == null) {
                     if (winSet.Attribute == "command") {
                         RunCommand(HandleEmbeddedWinget(controlId, winSet.Value, out _));
+                    } else if (winSet.Attribute == "browser-options") {
+                        // BYOND exposes this as a browser-wide setting. Robust's WebView backend handles storage
+                        // differently, so this is currently a safe no-op.
+                        _sawmill.Error($"Unsupported browser-options winset \"{winSet.Value}\"");
                     } else {
                         _sawmill.Error($"Invalid global winset \"{winsetParams}\"");
                     }
@@ -833,7 +849,10 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
                     element.SetProperty(attribute.Key, attribute.Value, manualWinset: true);
                 }
             } else {
-                _sawmill.Error($"Invalid element \"{controlId}\"");
+                if (string.IsNullOrEmpty(controlId))
+                    _sawmill.Error($"Invalid element \"{controlId}\"");
+                else
+                    _sawmill.Error($"Invalid element \"{controlId}\"");
             }
         }
     }

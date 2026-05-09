@@ -72,6 +72,9 @@ public static class HtmlParser {
 
                     currentText.Clear();
 
+                    if (tagType.StartsWith("!--") || tagType.StartsWith('!'))
+                        break;
+
                     bool isSelfClosing = IsSelfClosing(tagType, attributes);
 
                     // remove self-closing slash if attached to tagType
