@@ -50,7 +50,7 @@
 	var/reachable as opendream_compiletimereadonly
 	var/game_state = 0 as num|opendream_unsupported //used to display server joinability on the hub - does not actually affect joining - unsupported due to no hub
 	var/host = "" as text|opendream_unsupported //contains the key of the world's host - unsupported as OD server does not run as a user
-	var/map_format = TOPDOWN_MAP as opendream_compiletimereadonly
+	var/map_format = TOPDOWN_MAP
 	var/cache_lifespan = 30 as num|opendream_unsupported //used to control cache expiry in RSC - unsupported due to no RSC
 	var/executor = "" as text|opendream_unsupported // DMCGI nonsense - there will be no ODCGI
 	

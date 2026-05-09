@@ -5,6 +5,8 @@ using OpenDreamShared.Dream;
 namespace OpenDreamRuntime.Objects.Types;
 
 public sealed class DreamObjectMatrix(DreamObjectDefinition objectDefinition) : DreamObject(objectDefinition) {
+    private const float Epsilon = 0.000001f;
+
     public float A { get=> _aInner.UnsafeGetValueAsFloat(); set { _aInner.DecRef(); _aInner = new(value); } }
     public float B { get=> _bInner.UnsafeGetValueAsFloat(); set { _bInner.DecRef(); _bInner = new(value); } }
     public float C { get=> _cInner.UnsafeGetValueAsFloat(); set { _cInner.DecRef(); _cInner = new(value); } }
@@ -360,13 +362,13 @@ public sealed class DreamObjectMatrix(DreamObjectDefinition objectDefinition) : 
     }
 
     private static bool IsInterpolationDegenerate(DreamObjectMatrix matrix) {
-        return matrix.B == 0f && matrix.E == 0f;
+        return ApproximatelyZero(matrix.B) && ApproximatelyZero(matrix.E);
     }
 
     private static void DecomposeMatrix(DreamObjectMatrix matrix, out float scaleX, out float scaleY, out float skew, out float angle) {
         scaleY = MathF.Sqrt(matrix.B * matrix.B + matrix.E * matrix.E);
 
-        if (scaleY == 0f) {
+        if (ApproximatelyZero(scaleY)) {
             angle = 0f;
             scaleX = matrix.A;
             skew = matrix.D;
@@ -389,7 +391,11 @@ public sealed class DreamObjectMatrix(DreamObjectDefinition objectDefinition) : 
         while (angle < -MathF.PI)
             angle += tau;
 
-        return MathF.Abs(angle) == MathF.PI ? 0f : angle;
+        return MathF.Abs(MathF.Abs(angle) - MathF.PI) < Epsilon ? 0f : angle;
+    }
+
+    private static bool ApproximatelyZero(float value) {
+        return MathF.Abs(value) < Epsilon;
     }
 
     /// <summary> Adds the second given matrix to the first given matrix. </summary>

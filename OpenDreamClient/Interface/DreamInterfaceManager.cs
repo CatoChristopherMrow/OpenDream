@@ -3,7 +3,6 @@ using System.Text;
 using System.Globalization;
 using System.Threading.Tasks;
 using OpenDreamClient.Audio;
-using System.Web;
 using OpenDreamShared.Network.Messages;
 using OpenDreamClient.Interface.Controls;
 using OpenDreamShared.Interface.Descriptors;
@@ -18,7 +17,6 @@ using Robust.Client.Input;
 using Robust.Client.UserInterface;
 using Robust.Client.UserInterface.Controls;
 using Robust.Shared.ContentPack;
-using Robust.Shared.GameObjects;
 using Robust.Shared.Network;
 using Robust.Shared.Random;
 using Robust.Shared.Asynchronous;
@@ -691,7 +689,7 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
                         _soundEngine.StopAllChannels();
                     else
                         _soundEngine.StopChannel(soundCommand.SoundData.Channel);
-                } else if (soundCommand.ResourcePath != null && soundCommand.Format != null) {
+                } else if (soundCommand is { ResourcePath: not null, Format: not null }) {
                     _soundEngine.PlaySound(soundCommand.SoundData, soundCommand.Format.Value, soundCommand.ResourcePath);
                 }
 
@@ -1142,8 +1140,8 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
                 var json = new StringBuilder();
                 json.Append('{');
 
-                for (var i = 0; i < elementIds.Length; i++) {
-                    var elementJson = GetAllProperties(elementIds[i], includeElementPrefix: true, jsonValuesAsRawStrings: true);
+                foreach (var elementId in elementIds) {
+                    var elementJson = GetAllProperties(elementId, includeElementPrefix: true, jsonValuesAsRawStrings: true);
                     if (elementJson.Length <= 2)
                         continue;
 
@@ -1158,8 +1156,8 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
             }
 
             var allProperties = new StringBuilder();
-            for (var i = 0; i < elementIds.Length; i++) {
-                var elementResult = GetAllProperties(elementIds[i], includeElementPrefix: true);
+            foreach (var elementId in elementIds) {
+                var elementResult = GetAllProperties(elementId, includeElementPrefix: true);
                 if (string.IsNullOrEmpty(elementResult))
                     continue;
 

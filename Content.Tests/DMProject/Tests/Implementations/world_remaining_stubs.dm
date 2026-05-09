@@ -12,6 +12,10 @@
 	ASSERT(isnull(world.reachable))
 
 	ASSERT(world.map_format == TOPDOWN_MAP)
+	world.map_format = SIDE_MAP
+	ASSERT(world.map_format == SIDE_MAP)
+	world.map_format = TILED_ICON_MAP
+	ASSERT(world.map_format == TILED_ICON_MAP)
 
 	ASSERT(!world.IsBanned("key", "127.0.0.1", "computer", null))
 	ASSERT(isnull(world.Repop()))

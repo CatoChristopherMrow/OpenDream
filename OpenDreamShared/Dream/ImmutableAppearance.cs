@@ -69,6 +69,7 @@ public sealed class ImmutableAppearance : IEquatable<ImmutableAppearance> {
 
     // PixelOffset2 behaves the same as PixelOffset in top-down mode. IconOffset applies only to this icon, not overlays.
     public Vector2i TotalPixelOffset => GetTotalPixelOffset(MapFormat.TopDown);
+
     public Vector2i GetTotalPixelOffset(MapFormat mapFormat) {
         return AppearancePositioning.GetPixelOffset(this, mapFormat, Vector2i.Zero, Vector2i.Zero, false);
     }

@@ -1,5 +1,4 @@
 ﻿using DMCompiler.Compiler.DM;
-using System;
 using System.IO;
 
 namespace DMCompiler.Compiler.DMPreprocessor;

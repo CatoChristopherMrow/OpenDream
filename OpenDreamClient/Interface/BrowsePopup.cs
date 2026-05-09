@@ -9,7 +9,7 @@ using System.Numerics;
 
 namespace OpenDreamClient.Interface;
 
-internal sealed partial class BrowsePopup {
+internal sealed class BrowsePopup {
     public event Action? Closed;
 
     public readonly ControlBrowser Browser;
@@ -111,7 +111,7 @@ internal sealed partial class BrowsePopup {
 
     private void SetVisible(bool visible) {
         _window.Visible = visible;
-        if (visible && !_window.IsOpen)
+        if (visible && _window is { IsOpen: false })
             _window.OpenCentered();
 
         UpdateBrowserGeometry();

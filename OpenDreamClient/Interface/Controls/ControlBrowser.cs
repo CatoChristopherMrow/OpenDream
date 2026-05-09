@@ -389,10 +389,9 @@ internal sealed partial class ControlBrowser : InterfaceControl {
         // Also replace ';' with '&' because they're both usable here
         var queryParams = HttpUtility.ParseQueryString(query.Substring(1).Replace(';', '&'));
 
-        var elementId = queryParams.Get("id");
-        var property = queryParams.Get("property");
-        var callback = queryParams.Get("callback");
-        if (elementId == null || property == null || callback == null) {
+        if (queryParams.Get("id") is not { } elementId ||
+            queryParams.Get("property") is not { } property ||
+            queryParams.Get("callback") is not { } callback) {
             _sawmill.Error($"Required arg 'id', 'property', or 'callback' not provided in embedded winget ({query})");
             return;
         }

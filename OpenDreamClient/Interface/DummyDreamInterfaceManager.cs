@@ -1,6 +1,5 @@
 using OpenDreamClient.Interface.Controls;
 using OpenDreamShared.Dream;
-using Robust.Shared.GameObjects;
 using OpenDreamShared.Network.Messages;
 using Robust.Shared.Network;
 using Robust.Shared.Timing;

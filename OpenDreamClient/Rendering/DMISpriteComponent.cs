@@ -1,7 +1,5 @@
 ﻿using OpenDreamShared.Dream;
 using OpenDreamShared.Rendering;
-using Robust.Shared.Maths;
-
 namespace OpenDreamClient.Rendering;
 
 [RegisterComponent]

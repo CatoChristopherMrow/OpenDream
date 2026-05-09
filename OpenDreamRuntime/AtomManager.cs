@@ -569,7 +569,7 @@ public sealed partial class AtomManager {
         if (DMISpriteSystem != null) {
             DMISpriteSystem.SetSpriteAppearance(ent, appearance);
         } else {
-            Rendering.DMISpriteSystem.SetSpriteAppearance(ent, new ImmutableAppearance(appearance, null));
+            DMISpriteSystem.SetSpriteAppearance(ent, new ImmutableAppearance(appearance, null));
         }
     }
 

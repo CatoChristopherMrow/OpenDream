@@ -542,7 +542,7 @@ internal static class DreamProcNativeRoot {
         var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(text));
         var hashValue = BitConverter.ToUInt64(hash, 0);
 
-        return new DreamValue(hashValue / ((double)ulong.MaxValue + 1d));
+        return new DreamValue(hashValue / (ulong.MaxValue + 1d));
     }
 
     [DreamProc("fcopy")]

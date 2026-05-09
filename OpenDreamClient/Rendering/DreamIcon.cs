@@ -609,7 +609,7 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
         CachedTexture = null;
     }
 
-    private struct AppearanceAnimation(DateTime start, TimeSpan duration, ImmutableAppearance endAppearance, AnimationEasing easing, AnimationFlags flags, int delay, bool lastInSequence, string? tag, string? command, Action<string>? commandRunner) {
+    private struct AppearanceAnimation(DateTime start, TimeSpan duration, ImmutableAppearance endAppearance, AnimationEasing easing, AnimationFlags flags, int delay, bool lastInSequence, string? tag, string? command, Action<string>? commandRunner) : IEquatable<AppearanceAnimation> {
         public readonly DateTime Start = start;
         public readonly TimeSpan Duration = duration;
         public readonly ImmutableAppearance EndAppearance = endAppearance;
@@ -620,5 +620,37 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
         public readonly string? Tag = tag;
         public readonly string? Command = command;
         public readonly Action<string>? CommandRunner = commandRunner;
+
+        public bool Equals(AppearanceAnimation other) {
+            return Start == other.Start &&
+                Duration == other.Duration &&
+                EqualityComparer<ImmutableAppearance>.Default.Equals(EndAppearance, other.EndAppearance) &&
+                Easing == other.Easing &&
+                Flags == other.Flags &&
+                Delay == other.Delay &&
+                LastInSequence == other.LastInSequence &&
+                Tag == other.Tag &&
+                Command == other.Command &&
+                CommandRunner == other.CommandRunner;
+        }
+
+        public override bool Equals(object? obj) {
+            return obj is AppearanceAnimation other && Equals(other);
+        }
+
+        public override int GetHashCode() {
+            HashCode hash = new();
+            hash.Add(Start);
+            hash.Add(Duration);
+            hash.Add(EndAppearance);
+            hash.Add(Easing);
+            hash.Add(Flags);
+            hash.Add(Delay);
+            hash.Add(LastInSequence);
+            hash.Add(Tag);
+            hash.Add(Command);
+            hash.Add(CommandRunner);
+            return hash.ToHashCode();
+        }
     }
 }
