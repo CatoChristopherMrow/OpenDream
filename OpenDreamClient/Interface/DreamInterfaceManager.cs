@@ -1,7 +1,6 @@
 ﻿using System.IO;
 using System.Text;
 using System.Globalization;
-using System.Net;
 using System.Threading.Tasks;
 using OpenDreamShared.Network.Messages;
 using OpenDreamClient.Interface.Controls;
@@ -558,7 +557,7 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
     }
 
     private void HandleBrowserOptions(string options) {
-        foreach (string rawOption in WebUtility.UrlDecode(options).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
+        foreach (string rawOption in DecodeBrowserOptions(options).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
             string option = rawOption.TrimStart('+', '-');
 
             switch (option) {
@@ -573,6 +572,13 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
                     return;
             }
         }
+    }
+
+    private static string DecodeBrowserOptions(string options) {
+        return options
+            .Replace("%2c", ",", StringComparison.OrdinalIgnoreCase)
+            .Replace("%2b", "+", StringComparison.OrdinalIgnoreCase)
+            .Replace("%2d", "-", StringComparison.OrdinalIgnoreCase);
     }
 
     public void RunCommand(string fullCommand, bool repeating = false) {
@@ -957,7 +963,28 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
             return string.Empty;
         }
 
-        var elementIds = controlId.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        IEnumerable<string> ExpandElementId(string elementId) {
+            if (!elementId.EndsWith(".*", StringComparison.Ordinal))
+                return [elementId];
+
+            var parentId = elementId[..^2];
+            if (Windows.TryGetValue(parentId, out var window))
+                return window.ChildControls.Select(control => $"{parentId}.{control.Id.Value}");
+
+            if (Menus.TryGetValue(parentId, out var menu))
+                return menu.MenuElementsById.Keys.Select(menuElementId => $"{parentId}.{menuElementId}");
+
+            if (MacroSets.TryGetValue(parentId, out var macroSet))
+                return macroSet.Macros.Keys.Select(macroId => $"{parentId}.{macroId}");
+
+            _sawmill.Error($"Could not winget wildcard element {elementId} because {parentId} does not exist");
+            return [];
+        }
+
+        var elementIds = controlId
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .SelectMany(ExpandElementId)
+            .ToArray();
 
         if (elementIds.Length == 0) {
             switch (queryValue) {

@@ -119,7 +119,11 @@ internal sealed partial class ControlBrowser : InterfaceControl {
             Uri oldUri = new Uri(_webView.Url);
             Uri newUri = new Uri(context.Url);
 
-            if (newUri.Scheme == "byond" || (newUri.AbsolutePath == oldUri.AbsolutePath && newUri.Query != string.Empty)) {
+            bool isLocalTopicNavigation = newUri is { Scheme: "http", Host: "127.0.0.1" } &&
+                newUri.Query != string.Empty &&
+                (newUri.AbsolutePath == oldUri.AbsolutePath || newUri.AbsolutePath == "/");
+
+            if (newUri.Scheme == "byond" || isLocalTopicNavigation) {
                 context.DoCancel();
 
                 switch (newUri.Host) {
