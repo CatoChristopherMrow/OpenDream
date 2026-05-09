@@ -676,7 +676,15 @@ internal sealed class DreamGlobalVars(DreamObjectDefinition listDef) : DreamList
     }
 
     public override int FindValue(DreamValue value, int start = 1, int end = 0) {
-        throw new NotImplementedException($".Find() is not yet implemented on {GetType()}");
+        var values = EnumerateValues().ToList();
+        if (end == 0 || end > values.Count) end = values.Count;
+
+        for (var i = start; i <= end; i++) {
+            if (values[i - 1].Equals(value))
+                return i;
+        }
+
+        return 0;
     }
 }
 
@@ -766,7 +774,16 @@ public sealed class ClientVerbsList : DreamList {
     }
 
     public override int FindValue(DreamValue value, int start = 1, int end = 0) {
-        throw new NotImplementedException($".Find() is not yet implemented on {GetType()}");
+        if (!value.TryGetValueAsProc(out var verb))
+            return 0;
+
+        if (end == 0 || end > Verbs.Count) end = Verbs.Count;
+        for (var i = start; i <= end; i++) {
+            if (Verbs[i - 1] == verb)
+                return i;
+        }
+
+        return 0;
     }
 }
 
@@ -867,7 +884,17 @@ public sealed class VerbsList(DreamObjectTree objectTree, AtomManager atomManage
     }
 
     public override int FindValue(DreamValue value, int start = 1, int end = 0) {
-        throw new NotImplementedException($".Find() is not yet implemented on {GetType()}");
+        if (!value.TryGetValueAsProc(out var verb) || verb.VerbId is not { } verbId)
+            return 0;
+
+        var verbs = GetVerbs();
+        if (end == 0 || end > verbs.Length) end = verbs.Length;
+        for (var i = start; i <= end; i++) {
+            if (verbs[i - 1] == verbId)
+                return i;
+        }
+
+        return 0;
     }
 }
 
@@ -1071,7 +1098,20 @@ public sealed class DreamVisContentsList : DreamList {
     }
 
     public override int FindValue(DreamValue value, int start = 1, int end = 0) {
-        throw new NotImplementedException($".Find() is not yet implemented on {GetType()}");
+        if (!value.TryGetValueAsDreamObject<DreamObjectAtom>(out var atom))
+            return 0;
+
+        if (end == 0 || end > _visContents.Count) end = _visContents.Count;
+        for (var i = start; i <= end; i++) {
+            if (_visContents[i - 1] == atom)
+                return i;
+        }
+
+        return 0;
+    }
+
+    public override bool ContainsValue(DreamValue value) {
+        return value.TryGetValueAsDreamObject<DreamObjectAtom>(out var atom) && _visContents.Contains(atom);
     }
 }
 
@@ -1293,7 +1333,14 @@ public sealed class ClientScreenList(DreamObjectTree objectTree, ServerScreenOve
     }
 
     public override int FindValue(DreamValue value, int start = 1, int end = 0) {
-        throw new NotImplementedException($".Find() is not yet implemented on {GetType()}");
+        if (end == 0 || end > _screenObjects.Count) end = _screenObjects.Count;
+
+        for (var i = start; i <= end; i++) {
+            if (_screenObjects[i - 1].Equals(value))
+                return i;
+        }
+
+        return 0;
     }
 }
 
@@ -1358,7 +1405,13 @@ public sealed class ClientImagesList(
     }
 
     public override int FindValue(DreamValue value, int start = 1, int end = 0) {
-        throw new NotImplementedException($".Find() is not yet implemented on {GetType()}");
+        if (end == 0 || end > _imageObjects.Count) end = _imageObjects.Count;
+        for (var i = start; i <= end; i++) {
+            if (_imageObjects[i - 1].Equals(value))
+                return i;
+        }
+
+        return 0;
     }
 }
 
@@ -1401,7 +1454,23 @@ public sealed class WorldContentsList(DreamObjectDefinition listDef, AtomManager
     }
 
     public override int FindValue(DreamValue value, int start = 1, int end = 0) {
-        throw new NotImplementedException($".Find() is not yet implemented on {GetType()}");
+        if (end == 0 || end > atomManager.AtomCount) end = atomManager.AtomCount;
+
+        var index = 0;
+        foreach (var atom in atomManager.EnumerateAtoms()) {
+            index++;
+
+            if (index >= start && new DreamValue(atom).Equals(value))
+                return index;
+            if (index >= end)
+                return 0;
+        }
+
+        return 0;
+    }
+
+    public override bool ContainsValue(DreamValue value) {
+        return FindValue(value) != 0;
     }
 }
 
@@ -1453,7 +1522,18 @@ public sealed class TurfContentsList(DreamObjectDefinition listDef, DreamObjectT
     }
 
     public override int FindValue(DreamValue value, int start = 1, int end = 0) {
-        throw new NotImplementedException($".Find() is not yet implemented on {GetType()}");
+        if (end == 0 || end > Cell.Movables.Count) end = Cell.Movables.Count;
+
+        for (var i = start; i <= end; i++) {
+            if (new DreamValue(Cell.Movables[i - 1]).Equals(value))
+                return i;
+        }
+
+        return 0;
+    }
+
+    public override bool ContainsValue(DreamValue value) {
+        return value.TryGetValueAsDreamObject<DreamObjectMovable>(out var movable) && movable.Loc == Cell.Turf;
     }
 }
 
@@ -1537,7 +1617,23 @@ public sealed class AreaContentsList(DreamObjectDefinition listDef, DreamObjectA
     }
 
     public override int FindValue(DreamValue value, int start = 1, int end = 0) {
-        throw new NotImplementedException($".Find() is not yet implemented on {GetType()}");
+        if (end == 0 || end > GetLength()) end = GetLength();
+
+        var index = 0;
+        foreach (var content in EnumerateValues()) {
+            index++;
+
+            if (index >= start && content.Equals(value))
+                return index;
+            if (index >= end)
+                return 0;
+        }
+
+        return 0;
+    }
+
+    public override bool ContainsValue(DreamValue value) {
+        return FindValue(value) != 0;
     }
 }
 
