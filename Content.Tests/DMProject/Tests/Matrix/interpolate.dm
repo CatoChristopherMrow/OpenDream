@@ -1,3 +1,4 @@
+// NOBYOND
 /proc/RunTest()
 	var/matrix/A = matrix(1, 2, 3, 4, 5, 6)
 	var/matrix/B = matrix(11, 22, 33, 44, 55, 66)

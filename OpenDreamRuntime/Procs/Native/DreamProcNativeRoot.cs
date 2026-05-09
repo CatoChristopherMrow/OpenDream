@@ -1505,10 +1505,16 @@ internal static class DreamProcNativeRoot {
 
                 //Choose whether we are inverting the original matrix or a clone of it
                 var invertableMatrix = doModify ? matrixInput : DreamObjectMatrix.MatrixClone(bundle.ObjectTree, matrixInput);
-                if (DreamObjectMatrix.TryInvert(invertableMatrix))
-                    return new DreamValue(invertableMatrix);
+                if (DreamObjectMatrix.TryInvert(invertableMatrix)) {
+                    if (doModify)
+                        invertableMatrix.IncRef();
 
-                invertableMatrix.DecRef();
+                    return new DreamValue(invertableMatrix);
+                }
+
+                if (!doModify)
+                    invertableMatrix.DecRef();
+
                 throw new ArgumentException("/matrix provided for MATRIX_INVERT cannot be inverted");
             case MatrixOpcode.Rotate:
                 var angleArgument = firstArgument;
@@ -1532,6 +1538,10 @@ internal static class DreamProcNativeRoot {
                     matrixToRotate = DreamObjectMatrix.MatrixClone(bundle.ObjectTree, matrixToRotate);
 
                 DreamObjectMatrix.MultiplyMatrix(matrixToRotate, rotationMatrix);
+                rotationMatrix.DecRef();
+                if (doModify)
+                    matrixToRotate.IncRef();
+
                 return new DreamValue(matrixToRotate);
             case MatrixOpcode.Scale:
                 //Four possible signatures: two to create a scale-matrix, and one to scale an existing matrix
@@ -1566,6 +1576,9 @@ internal static class DreamProcNativeRoot {
                     }
 
                     DreamObjectMatrix.ScaleMatrix(scaledMatrix, horizontalScale, verticalScale);
+                    if (doModify)
+                        scaledMatrix.IncRef();
+
                     return new DreamValue(scaledMatrix);
                 } else { // making a scale-matrix
                     if (!firstArgument.TryGetValueAsFloat(out horizontalScale))
@@ -1600,6 +1613,9 @@ internal static class DreamProcNativeRoot {
 
                     bundle.GetArgument(2, "c").TryGetValueAsFloat(out float verticalOffset);
                     translateMatrix.F += verticalOffset;
+                    if (doModify)
+                        translateMatrix.IncRef();
+
                     return new DreamValue(translateMatrix);
                 }
 
@@ -1628,6 +1644,9 @@ internal static class DreamProcNativeRoot {
                     ? interpolateFrom
                     : DreamObjectMatrix.MatrixClone(bundle.ObjectTree, interpolateFrom);
                 DreamObjectMatrix.InterpolateMatrix(interpolatedMatrix, interpolateTo, interpolateT);
+                if (doModify)
+                    interpolatedMatrix.IncRef();
+
                 return new DreamValue(interpolatedMatrix);
             default: // Being here means that the opcode is defined but not yet implemented within this switch.
                 throw new NotImplementedException($"/matrix() called with unimplemented opcode '{Enum.GetName(opcode)}'");

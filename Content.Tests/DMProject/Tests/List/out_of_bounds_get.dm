@@ -1,3 +1,4 @@
+// NOBYOND
 /proc/RunTest()
 	var/list/L = list("first")
 	ASSERT(isnull(L[0]))

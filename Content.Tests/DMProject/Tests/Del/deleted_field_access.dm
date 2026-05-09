@@ -1,3 +1,4 @@
+// NOBYOND
 /proc/RunTest()
 	var/datum/thing = new()
 	del(thing)

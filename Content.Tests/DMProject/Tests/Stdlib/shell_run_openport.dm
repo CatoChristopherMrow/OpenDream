@@ -1,3 +1,4 @@
+// NOBYOND
 /proc/RunTest()
 	ASSERT(shell("exit 7") == 7)
 	ASSERT(run("") == FALSE)

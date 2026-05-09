@@ -77,12 +77,10 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
 
         if (!node.Closing) {
             tag.PushDrawContext(node, context);
-            context.Tags.Add(tag);
             return tag.TextBefore(node);
         }
 
         tag.PopDrawContext(node, context);
-        context.Tags.Remove(tag);
         return tag.TextAfter(node);
     }
 

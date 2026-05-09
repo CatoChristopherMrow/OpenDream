@@ -1,3 +1,4 @@
+// NOBYOND
 /world
 	maxx = 3
 	maxy = 3

@@ -146,7 +146,7 @@ public class DreamObject {
     }
 
     private bool IsManagedByQdel() {
-        if (ObjectDefinition?.HasVariable("gc_destroyed") != true)
+        if (!ObjectDefinition.HasVariable("gc_destroyed"))
             return false;
 
         using var gcDestroyed = GetVariable("gc_destroyed");

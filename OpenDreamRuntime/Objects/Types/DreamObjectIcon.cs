@@ -1,5 +1,4 @@
-﻿using System.Collections.Generic;
-using OpenDreamRuntime.Procs;
+﻿using OpenDreamRuntime.Procs;
 using OpenDreamShared.Dream;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;

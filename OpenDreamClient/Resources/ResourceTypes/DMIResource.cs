@@ -11,69 +11,80 @@ using SixLabors.ImageSharp.Processing;
 namespace OpenDreamClient.Resources.ResourceTypes;
 
 public sealed class DMIResource : DreamResource {
-    public Texture Texture = default!;
+    public Texture Texture;
     public Vector2i IconSize;
-    public DMIParser.ParsedDMIDescription Description = default!;
+    public DMIParser.ParsedDMIDescription Description;
 
     private readonly IClyde _clyde;
     private readonly ITaskManager _taskManager;
     private readonly int _mainThreadId;
-    private readonly Dictionary<string, State> _states;
+    private Dictionary<string, State> _states;
 
     public DMIResource(int id, byte[] data, IClyde clyde, ITaskManager taskManager, int mainThreadId) : base(id, data) {
         _clyde = clyde;
         _taskManager = taskManager;
         _mainThreadId = mainThreadId;
-        _states = new Dictionary<string, State>();
-        ProcessDMIData();
+        var processedData = ProcessDMIData();
+        Texture = processedData.Texture;
+        IconSize = processedData.IconSize;
+        Description = processedData.Description;
+        _states = processedData.States;
     }
 
     public override void UpdateData(byte[] data) {
         base.UpdateData(data);
-        ProcessDMIData();
+        ApplyDMIData(ProcessDMIData());
     }
 
-    private void ProcessDMIData() {
+    private ProcessedDMIData ProcessDMIData() {
         using Stream dmiStream = new MemoryStream(Data);
         DMIParser.ParsedDMIDescription description = DMIParser.ParseDMI(dmiStream);
 
         dmiStream.Seek(0, SeekOrigin.Begin);
 
         Image<Rgba32> image = Image.Load<Rgba32>(dmiStream);
-        LoadTextureOnMainThread(image, description);
+        return LoadTextureOnMainThread(image, description);
     }
 
-    private void FinalizeDMIData(Image<Rgba32> image, DMIParser.ParsedDMIDescription description) {
-        Texture = _clyde.LoadTextureFromImage(image, name: $"DMI Resource #{Id}");
-        IconSize = new Vector2i(description.Width, description.Height);
-        Description = description;
-        _states.Clear();
+    private ProcessedDMIData FinalizeDMIData(Image<Rgba32> image, DMIParser.ParsedDMIDescription description) {
+        var texture = _clyde.LoadTextureFromImage(image, name: $"DMI Resource #{Id}");
+        var iconSize = new Vector2i(description.Width, description.Height);
+        var states = new Dictionary<string, State>();
         foreach (DMIParser.ParsedDMIState parsedState in description.States.Values) {
-            State state = new State(Texture, parsedState, description.Width, description.Height);
+            State state = new State(texture, parsedState, description.Width, description.Height);
 
-            _states.Add(parsedState.Name, state);
+            states.Add(parsedState.Name, state);
         }
+
+        return new ProcessedDMIData(texture, iconSize, description, states);
     }
 
-    private void LoadTextureOnMainThread(Image<Rgba32> image, DMIParser.ParsedDMIDescription description) {
+    private ProcessedDMIData LoadTextureOnMainThread(Image<Rgba32> image, DMIParser.ParsedDMIDescription description) {
         if (Environment.CurrentManagedThreadId == _mainThreadId) {
-            FinalizeDMIData(image, description);
-            return;
+            return FinalizeDMIData(image, description);
         }
 
-        TaskCompletionSource finished = new();
+        TaskCompletionSource<ProcessedDMIData> finished = new();
 
         _taskManager.RunOnMainThread(() => {
             try {
-                FinalizeDMIData(image, description);
-                finished.SetResult();
+                finished.SetResult(FinalizeDMIData(image, description));
             } catch (Exception e) {
                 finished.SetException(e);
             }
         });
 
-        finished.Task.Wait();
+        return finished.Task.GetAwaiter().GetResult();
     }
+
+    private void ApplyDMIData(ProcessedDMIData data) {
+        Texture = data.Texture;
+        IconSize = data.IconSize;
+        Description = data.Description;
+        _states = data.States;
+    }
+
+    private sealed record ProcessedDMIData(Texture Texture, Vector2i IconSize, DMIParser.ParsedDMIDescription Description, Dictionary<string, State> States);
 
     public State? GetState(string? stateName) {
         if (stateName == null || !_states.ContainsKey(stateName))

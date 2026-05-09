@@ -1,3 +1,4 @@
+// NOBYOND
 /obj/modified_type_test
 	var/amount = 1
 	var/label = "base"

@@ -1,3 +1,4 @@
+// NOBYOND
 /proc/RunTest()
 	var/list/L = new(1)
 	ASSERT(L.len == 1)

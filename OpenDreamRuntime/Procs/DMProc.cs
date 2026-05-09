@@ -63,8 +63,7 @@ public sealed class DMProc : DreamProc {
         SourceInfoJson current = SourceInfo[0];
         string source = GetSourceFileName(current.File);
 
-        for (int i = 0; i < SourceInfo.Count; i++) {
-            var next = SourceInfo[i];
+        foreach (var next in SourceInfo) {
             if (next.Offset > offset)
                 break;
 

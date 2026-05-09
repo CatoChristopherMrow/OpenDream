@@ -99,10 +99,8 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
             _sawmill.Verbose($"Cache hit for {filename}");
         } else {
             lock (_browseRscLock) {
-                if (_activeBrowseRscRequests.Contains(filename)) //we've already requested it, don't need to do it again
+                if (!_activeBrowseRscRequests.Add(filename)) //we've already requested it, don't need to do it again
                     return;
-
-                _activeBrowseRscRequests.Add(filename);
             }
 
             if (_resourceManager.UserData.Exists(cacheFilePath)) {
@@ -285,11 +283,10 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
 
         var requestedSpeculatively = false;
         lock (_browseRscLock) {
-            if (!_activeBrowseRscRequests.Contains(filename)) {
+            if (_activeBrowseRscRequests.Add(filename)) {
                 // The embedded browser can request subresources before the browse_rsc()
                 // announcement packet has been processed locally. Ask the server; it
                 // will only answer if this file was actually permitted.
-                _activeBrowseRscRequests.Add(filename);
                 requestedSpeculatively = true;
             }
         }

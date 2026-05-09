@@ -2978,13 +2978,13 @@ namespace OpenDreamRuntime.Procs {
                     break;
                 }
                 case DreamValue.DreamValueType.ModifiedDreamType: {
-                    first.TryGetValueAsModifiedType(out DreamModifiedType? firstValue);
+                    if (!first.TryGetValueAsModifiedType(out var firstValue))
+                        return false;
 
                     switch (second.Type) {
                         case DreamValue.DreamValueType.ModifiedDreamType:
-                            second.TryGetValueAsModifiedType(out DreamModifiedType? secondValue);
-                            return firstValue!.Equals(secondValue);
-                        case DreamValue.DreamValueType.DreamType: return firstValue?.Type.Equals(second.MustGetValueAsType()) == true;
+                            return second.TryGetValueAsModifiedType(out var secondValue) && firstValue.Equals(secondValue);
+                        case DreamValue.DreamValueType.DreamType: return firstValue.Type.Equals(second.MustGetValueAsType());
                         case DreamValue.DreamValueType.Float:
                         case DreamValue.DreamValueType.DreamObject:
                         case DreamValue.DreamValueType.String: return false;

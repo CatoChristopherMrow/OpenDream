@@ -304,7 +304,7 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
     }
 
     public readonly bool TryGetValueAsDreamObject<T>([NotNullWhen(true)] out T? dreamObject) where T : DreamObject {
-        if (_refValue is T dreamObjectValue && !dreamObjectValue.Deleted) {
+        if (_refValue is T { Deleted: false } dreamObjectValue) {
             dreamObject = dreamObjectValue;
             return true;
         }
