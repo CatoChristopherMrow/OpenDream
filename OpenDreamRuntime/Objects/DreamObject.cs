@@ -141,8 +141,16 @@ public class DreamObject {
             return;
 
         RefCount--;
-        if (RefCount == 0)
+        if (RefCount == 0 && !IsManagedByQdel())
             Delete();
+    }
+
+    private bool IsManagedByQdel() {
+        if (ObjectDefinition?.HasVariable("gc_destroyed") != true)
+            return false;
+
+        using var gcDestroyed = GetVariable("gc_destroyed");
+        return gcDestroyed.IsTruthy();
     }
 
     /// <summary>
