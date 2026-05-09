@@ -616,6 +616,7 @@ public class DreamIconOperationBlend : IDreamIconOperation {
 public sealed class DreamIconOperationBlendImage : DreamIconOperationBlend {
     private readonly Image<Rgba32> _blending;
     private readonly ParsedDMIState? _blendingState;
+    private readonly int _blendingWidth, _blendingHeight;
 
     public DreamIconOperationBlendImage(BlendType type, int xOffset, int yOffset, DreamValue blending) : base(type, xOffset, yOffset) {
         //TODO: Find a way to get rid of this!
@@ -627,6 +628,8 @@ public sealed class DreamIconOperationBlendImage : DreamIconOperationBlend {
 
         _blending = blendingIcon.Texture;
         _blendingState = blendingIcon.DMI.States.Values.FirstOrDefault();
+        _blendingWidth = blendingIcon.DMI.Width;
+        _blendingHeight = blendingIcon.DMI.Height;
     }
 
     public override void OnApply(DreamIcon icon) {
@@ -661,10 +664,17 @@ public sealed class DreamIconOperationBlendImage : DreamIconOperationBlend {
 
         var blendingFrame = blendingDirFrames[frame];
 
-        // Use the smaller of the two sizes if they're different
+        // Use the smaller of the two frame sizes if they're different
         // TODO: 1,1 should be bottom left, not top left
-        bounds = UIBox2i.FromDimensions(bounds.Left, bounds.Top, Math.Min(_blending.Width, bounds.Width),
-            Math.Min(_blending.Height, bounds.Height));
+        int blendWidth = Math.Min(bounds.Width, _blendingWidth);
+        int blendHeight = Math.Min(bounds.Height, _blendingHeight);
+
+        blendWidth = Math.Min(blendWidth, _blending.Width - blendingFrame.X);
+        blendHeight = Math.Min(blendHeight, _blending.Height - blendingFrame.Y);
+        if (blendWidth <= 0 || blendHeight <= 0)
+            return;
+
+        bounds = UIBox2i.FromDimensions(bounds.Left, bounds.Top, blendWidth, blendHeight);
 
         _blending.ProcessPixelRows(accessor => {
             // TODO: x & y offsets
