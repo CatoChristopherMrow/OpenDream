@@ -99,6 +99,19 @@ internal static class DreamProcNativeRoot {
         int endY = Math.Max(y1, y2);
         int endZ = Math.Max(z1, z2);
 
+        if (endX < 1 || startX > mapManager.Size.X ||
+            endY < 1 || startY > mapManager.Size.Y ||
+            endZ < 1 || startZ > mapManager.Levels) {
+            return objectTree.CreateList();
+        }
+
+        startX = Math.Max(startX, 1);
+        startY = Math.Max(startY, 1);
+        startZ = Math.Max(startZ, 1);
+        endX = Math.Min(endX, mapManager.Size.X);
+        endY = Math.Min(endY, mapManager.Size.Y);
+        endZ = Math.Min(endZ, mapManager.Levels);
+
         DreamList turfs = objectTree.CreateList((endX - startX + 1) * (endY - startY + 1) * (endZ - startZ + 1));
 
         // Collected in z-y-x order

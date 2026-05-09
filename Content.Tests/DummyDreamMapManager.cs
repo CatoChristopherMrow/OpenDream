@@ -12,8 +12,8 @@ using Robust.Shared.Maths;
 namespace Content.Tests;
 
 public sealed class DummyDreamMapManager : IDreamMapManager {
-    public Vector2i Size => Vector2i.Zero;
-    public int Levels => 0;
+    public Vector2i Size { get; private set; } = Vector2i.Zero;
+    public int Levels { get; private set; }
     public DreamObjectArea DefaultArea => null!;
 
     public void Initialize() { }
@@ -42,9 +42,13 @@ public sealed class DummyDreamMapManager : IDreamMapManager {
         return false;
     }
 
-    public void SetZLevels(int levels) { }
+    public void SetZLevels(int levels) {
+        Levels = levels;
+    }
 
-    public void SetWorldSize(Vector2i size) { }
+    public void SetWorldSize(Vector2i size) {
+        Size = size;
+    }
 
     public EntityUid GetZLevelEntity(int z) {
         return EntityUid.Invalid;
