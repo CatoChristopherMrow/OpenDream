@@ -250,6 +250,31 @@ internal class ConstantTypeReference(Location location, DMObject dmObject) : Con
     }
 }
 
+internal sealed class ModifiedTypeReference(Location location, DMObject dmObject, string variableOverridesJson) : Constant(location), IConstantPath {
+    public DMObject Value { get; } = dmObject;
+
+    public override DreamPath? Path => Value.Path;
+    public override DMComplexValueType ValType => Value.Path;
+
+    public override void EmitPushValue(ExpressionContext ctx) {
+        ctx.Proc.PushModifiedType(Value.Id, variableOverridesJson);
+    }
+
+    public override string? GetNameof(ExpressionContext ctx) => Value.Path.LastElement;
+
+    public override bool IsTruthy() => true;
+
+    public override bool TryAsJsonRepresentation(DMCompiler compiler, out object? json) {
+        json = new Dictionary<string, object> {
+            { "type", JsonVariableType.Type },
+            { "value", Value.Id },
+            { "var_overrides", variableOverridesJson }
+        };
+
+        return true;
+    }
+}
+
 /// <summary>
 /// A reference to a proc
 /// <code>/datum/proc/foo</code>

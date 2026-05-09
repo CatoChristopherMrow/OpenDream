@@ -1598,6 +1598,19 @@ internal static class DreamProcNativeRoot {
 
                 var translationMatrix = DreamObjectMatrix.MakeMatrix(bundle.ObjectTree, 1, 0, horizontalShift, 0, 1, verticalShift);
                 return new DreamValue(translationMatrix);
+            case MatrixOpcode.Interpolate:
+                if (!firstArgument.TryGetValueAsDreamObject<DreamObjectMatrix>(out var interpolateFrom))
+                    throw new ArgumentException($"/matrix() called with invalid argument '{firstArgument}', expecting matrix");
+                if (!secondArgument.TryGetValueAsDreamObject<DreamObjectMatrix>(out var interpolateTo))
+                    throw new ArgumentException($"/matrix() called with invalid argument '{secondArgument}', expecting matrix");
+                if (!bundle.GetArgument(2, "c").TryGetValueAsFloat(out var interpolateT))
+                    throw new ArgumentException($"/matrix() called with invalid interpolation factor '{bundle.GetArgument(2, "c")}'");
+
+                var interpolatedMatrix = doModify
+                    ? interpolateFrom
+                    : DreamObjectMatrix.MatrixClone(bundle.ObjectTree, interpolateFrom);
+                DreamObjectMatrix.InterpolateMatrix(interpolatedMatrix, interpolateTo, interpolateT);
+                return new DreamValue(interpolatedMatrix);
             default: // Being here means that the opcode is defined but not yet implemented within this switch.
                 throw new NotImplementedException($"/matrix() called with unimplemented opcode '{Enum.GetName(opcode)}'");
         }
@@ -2324,6 +2337,25 @@ internal static class DreamProcNativeRoot {
         return new DreamValue(total);
     }
 
+    [DreamProc("run")]
+    [DreamProcParameter("File", Type = DreamValueTypeFlag.String | DreamValueTypeFlag.DreamResource)]
+    public static DreamValue NativeProc_run(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        string fileName = bundle.GetArgument(0, "File").Stringify();
+        if (string.IsNullOrWhiteSpace(fileName))
+            return DreamValue.False;
+
+        try {
+            Process.Start(new ProcessStartInfo {
+                FileName = fileName,
+                UseShellExecute = true
+            });
+
+            return DreamValue.True;
+        } catch {
+            return DreamValue.False;
+        }
+    }
+
     [DreamProc("sha1")]
     [DreamProcParameter("T", Type = DreamValueTypeFlag.String | DreamValueTypeFlag.DreamResource)]
     public static DreamValue NativeProc_sha1(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
@@ -2350,6 +2382,34 @@ internal static class DreamProcNativeRoot {
         //Match BYOND formatting
         string hash = BitConverter.ToString(output).Replace("-", "").ToLower();
         return new DreamValue(hash);
+    }
+
+    [DreamProc("shell")]
+    [DreamProcParameter("command", Type = DreamValueTypeFlag.String)]
+    public static DreamValue NativeProc_shell(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        string command = bundle.GetArgument(0, "command").Stringify();
+        if (string.IsNullOrWhiteSpace(command))
+            return DreamValue.False;
+
+        var startInfo = OperatingSystem.IsWindows()
+            ? new ProcessStartInfo("cmd.exe")
+            : new ProcessStartInfo("/bin/sh");
+
+        if (OperatingSystem.IsWindows()) {
+            startInfo.ArgumentList.Add("/C");
+        } else {
+            startInfo.ArgumentList.Add("-c");
+        }
+
+        startInfo.ArgumentList.Add(command);
+
+        startInfo.UseShellExecute = false;
+        using var process = Process.Start(startInfo);
+        if (process is null)
+            return DreamValue.False;
+
+        process.WaitForExit();
+        return new DreamValue(process.ExitCode);
     }
 
     [DreamProc("shutdown")]
@@ -3315,6 +3375,29 @@ internal static class DreamProcNativeRoot {
 
         bundle.WalkManager.StartWalk(refAtom, dir, lag, speed);
 
+        return DreamValue.Null;
+    }
+
+    [DreamProc("walk_away")]
+    [DreamProcParameter("Ref", Type = DreamValueTypeFlag.DreamObject)]
+    [DreamProcParameter("Trg", Type = DreamValueTypeFlag.DreamObject)]
+    [DreamProcParameter("Max", Type = DreamValueTypeFlag.Float, DefaultValue = 5)]
+    [DreamProcParameter("Lag", Type = DreamValueTypeFlag.Float, DefaultValue = 0)]
+    [DreamProcParameter("Speed", Type = DreamValueTypeFlag.Float, DefaultValue = 0)]
+    public static DreamValue NativeProc_walk_away(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        if (!bundle.GetArgument(0, "Ref").TryGetValueAsDreamObject<DreamObjectMovable>(out var refAtom))
+            return DreamValue.Null;
+
+        if (!bundle.GetArgument(1, "Trg").TryGetValueAsDreamObject<DreamObjectAtom>(out var trgAtom)) {
+            bundle.WalkManager.StopWalks(refAtom);
+            return DreamValue.Null;
+        }
+
+        bundle.GetArgument(2, "Max").TryGetValueAsInteger(out var max);
+        bundle.GetArgument(3, "Lag").TryGetValueAsInteger(out var lag);
+        bundle.GetArgument(4, "Speed").TryGetValueAsInteger(out var speed);
+
+        bundle.WalkManager.StartWalkAway(refAtom, trgAtom, max, lag, speed);
         return DreamValue.Null;
     }
 

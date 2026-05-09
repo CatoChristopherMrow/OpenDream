@@ -92,6 +92,9 @@ public struct ProcDecoder(IReadOnlyList<string> strings, byte[] bytecode) {
             case DreamProcOpcode.DereferenceField:
                 return (opcode, ReadString());
 
+            case DreamProcOpcode.PushModifiedType:
+                return (opcode, ReadInt(), ReadString());
+
             case DreamProcOpcode.DereferenceCall:
                 return (opcode, ReadString(), (DMCallArgumentsType)ReadByte(), ReadInt());
 
@@ -279,6 +282,14 @@ public struct ProcDecoder(IReadOnlyList<string> strings, byte[] bytecode) {
                 text.Append('\'');
                 text.Append(str);
                 text.Append('\'');
+                break;
+
+            case (DreamProcOpcode.PushModifiedType, int typeId, string str):
+                text.Append(typeId);
+                text.Append(' ');
+                text.Append('"');
+                text.Append(str);
+                text.Append('"');
                 break;
 
             case (DreamProcOpcode.Spawn

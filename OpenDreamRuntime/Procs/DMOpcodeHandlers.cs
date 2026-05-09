@@ -229,7 +229,13 @@ namespace OpenDreamRuntime.Procs {
                 overrides = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonDict);
             }
 
-            if (!val.TryGetValueAsType(out var objectType)) {
+            TreeEntry? objectType;
+            if (val.TryGetValueAsModifiedType(out var modifiedType)) {
+                if (overrides is null)
+                    overrides = JsonSerializer.Deserialize<Dictionary<string, object?>>(modifiedType.VariableOverridesJson);
+
+                objectType = modifiedType.Type;
+            } else if (!val.TryGetValueAsType(out objectType)) {
                 if (val.TryGetValueAsString(out var pathString)) {
                     if (!state.Proc.ObjectTree.TryGetTreeEntry(pathString, out objectType)) {
                         ThrowCannotCreateUnknownObject(val);
@@ -455,7 +461,7 @@ namespace OpenDreamRuntime.Procs {
                     //Interp values
                     case FormatSuffix.StringifyWithArticle:{
                         // TODO: use postPrefix for \th interpolation
-                        formattedString.Append(interps[nextInterpIndex].Stringify());
+                        formattedString.Append(StringifyForInterpolation(interps[nextInterpIndex], state));
                         prevInterpIndex = nextInterpIndex;
                         nextInterpIndex++;
                         continue;
@@ -470,7 +476,12 @@ namespace OpenDreamRuntime.Procs {
                     }
                     case FormatSuffix.StringifyNoArticle: {
                         if (interps[nextInterpIndex].TryGetValueAsDreamObject<DreamObject>(out var dreamObject)) {
-                            formattedString.Append(dreamObject.GetNameUnformatted());
+                            if (dreamObject.TryOperatorStringify(state, out var operatorResult)) {
+                                formattedString.Append(operatorResult.Stringify());
+                                operatorResult.Dispose();
+                            } else {
+                                formattedString.Append(dreamObject.GetNameUnformatted());
+                            }
                         } else if (interps[nextInterpIndex].TryGetValueAsString(out var interpStr)) {
                             formattedString.Append(StringFormatDecoder.RemoveFormatting(interpStr));
                         }
@@ -672,6 +683,18 @@ namespace OpenDreamRuntime.Procs {
             return ProcStatus.Continue;
         }
 
+        private static string StringifyForInterpolation(DreamValue value, DMProcState state) {
+            if (!value.TryGetValueAsDreamObject<DreamObject>(out var dreamObject) || dreamObject is null)
+                return value.Stringify();
+
+            if (!dreamObject.TryOperatorStringify(state, out var operatorResult))
+                return value.Stringify();
+
+            string result = operatorResult.Stringify();
+            operatorResult.Dispose();
+            return result;
+        }
+
         public static ProcStatus Initial(DMProcState state) {
             using var key = state.Pop();
             using var owner = state.Pop();
@@ -797,6 +820,15 @@ namespace OpenDreamRuntime.Procs {
             var type = state.Proc.ObjectTree.Types[typeId];
 
             state.Push(new DreamValue(type));
+            return ProcStatus.Continue;
+        }
+
+        public static ProcStatus PushModifiedType(DMProcState state) {
+            int typeId = state.ReadInt();
+            var type = state.Proc.ObjectTree.Types[typeId];
+            string variableOverridesJson = state.ReadString();
+
+            state.Push(new DreamValue(new DreamModifiedType(type, variableOverridesJson)));
             return ProcStatus.Continue;
         }
 

@@ -555,6 +555,10 @@ public class DreamObject {
         throw new InvalidOperationException($"Cannot assign {value} to index {index} of {this}");
     }
 
+    public bool TryOperatorStringify(DMProcState state, [MustDisposeResource] out DreamValue procResult) {
+        return TryExecuteOperatorOverload(state, "operator\"\"", new DreamProcArguments(), out procResult);
+    }
+
     #endregion Operators
 
     private bool TryExecuteOperatorOverload(

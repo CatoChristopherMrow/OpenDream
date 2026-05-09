@@ -92,7 +92,9 @@ internal static class DreamProcNative {
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_rgb2num);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_roll);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_round);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_run);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_sha1);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_shell);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_shutdown);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_sign);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_sleep);
@@ -128,6 +130,7 @@ internal static class DreamProcNative {
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_view);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_viewers);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_walk);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_walk_away);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_walk_rand);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_walk_towards);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_walk_to);
@@ -163,6 +166,7 @@ internal static class DreamProcNative {
         objectTree.SetNativeProc(objectTree.AssocList, DreamProcNativeList.NativeProc_Swap);
 
         objectTree.SetNativeProc(objectTree.Matrix, DreamProcNativeMatrix.NativeProc_Add);
+        objectTree.SetNativeProc(objectTree.Matrix, DreamProcNativeMatrix.NativeProc_Interpolate);
         objectTree.SetNativeProc(objectTree.Matrix, DreamProcNativeMatrix.NativeProc_Invert);
         objectTree.SetNativeProc(objectTree.Matrix, DreamProcNativeMatrix.NativeProc_Multiply);
         objectTree.SetNativeProc(objectTree.Matrix, DreamProcNativeMatrix.NativeProc_Scale);
@@ -195,6 +199,7 @@ internal static class DreamProcNative {
 
         objectTree.SetNativeProc(objectTree.World, DreamProcNativeWorld.NativeProc_Export);
         objectTree.SetNativeProc(objectTree.World, DreamProcNativeWorld.NativeProc_GetConfig);
+        objectTree.SetNativeProc(objectTree.World, DreamProcNativeWorld.NativeProc_OpenPort);
         objectTree.SetNativeProc(objectTree.World, DreamProcNativeWorld.NativeProc_Profile);
         objectTree.SetNativeProc(objectTree.World, DreamProcNativeWorld.NativeProc_SetConfig);
         objectTree.SetNativeProc(objectTree.World, DreamProcNativeWorld.NativeProc_ODHotReloadInterface);

@@ -30,7 +30,8 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
         DreamObject   = 4,
         DreamType     = 5,
         DreamProc     = 6,
-        Appearance    = 7
+        Appearance    = 7,
+        ModifiedDreamType = 8
         // @formatter:on
     }
 
@@ -43,7 +44,8 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
         DreamObject   = 1 << (DreamValueType.DreamObject   - 1),
         DreamType     = 1 << (DreamValueType.DreamType     - 1),
         DreamProc     = 1 << (DreamValueType.DreamProc     - 1),
-        Appearance    = 1 << (DreamValueType.Appearance    - 1)
+        Appearance    = 1 << (DreamValueType.Appearance    - 1),
+        ModifiedDreamType = 1 << (DreamValueType.ModifiedDreamType - 1)
         // @formatter:on
     }
 
@@ -108,6 +110,11 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
 
     public DreamValue(TreeEntry value) {
         Type = DreamValueType.DreamType;
+        _refValue = value;
+    }
+
+    public DreamValue(DreamModifiedType value) {
+        Type = DreamValueType.ModifiedDreamType;
         _refValue = value;
     }
 
@@ -343,6 +350,9 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
             type = Unsafe.As<TreeEntry>(_refValue)!;
 
             return true;
+        } else if (Type == DreamValueType.ModifiedDreamType) {
+            type = Unsafe.As<DreamModifiedType>(_refValue)!.Type;
+            return true;
         }
 
         type = null;
@@ -350,10 +360,23 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
     }
 
     public TreeEntry MustGetValueAsType() {
+        if (Type == DreamValueType.ModifiedDreamType)
+            return Unsafe.As<DreamModifiedType>(_refValue)!.Type;
+
         if (Type != DreamValueType.DreamType) // Could be a proc or verb stub, they hold they same value
             throw new InvalidCastException($"Value {this} was not the expected type of DreamPath");
 
         return Unsafe.As<TreeEntry>(_refValue)!;
+    }
+
+    public readonly bool TryGetValueAsModifiedType([NotNullWhen(true)] out DreamModifiedType? type) {
+        if (Type == DreamValueType.ModifiedDreamType) {
+            type = Unsafe.As<DreamModifiedType>(_refValue)!;
+            return true;
+        }
+
+        type = null;
+        return false;
     }
 
     public readonly bool TryGetValueAsProc([NotNullWhen(true)] out DreamProc? proc) {
@@ -409,6 +432,7 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
             case DreamValueType.DreamType:
             case DreamValueType.DreamProc:
             case DreamValueType.Appearance:
+            case DreamValueType.ModifiedDreamType:
                 return true;
             default:
                 return false;
@@ -444,6 +468,8 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
                 var rsc = MustGetValueAsDreamResource();
                 return rsc.ResourcePath ?? string.Empty;
             case DreamValueType.DreamType:
+                return MustGetValueAsType().Path;
+            case DreamValueType.ModifiedDreamType:
                 return MustGetValueAsType().Path;
             case DreamValueType.DreamProc:
                 var proc = MustGetValueAsProc();
@@ -503,6 +529,8 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
         return !a.Equals(b);
     }
 }
+
+public sealed record DreamModifiedType(TreeEntry Type, string VariableOverridesJson);
 
 #region Serialization
 

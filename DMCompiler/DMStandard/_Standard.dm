@@ -182,8 +182,6 @@ proc/winset(player, control_id, params)
 	return step(Ref, step_dir, Speed)
 
 /proc/walk_away(Ref,Trg,Max=5,Lag=0,Speed=0)
-	set opendream_unimplemented = TRUE
-	CRASH("/walk_away() is not implemented")
 
 proc/get_dist(atom/Loc1, atom/Loc2) as num
 	if (!istype(Loc1) || !istype(Loc2)) return 127

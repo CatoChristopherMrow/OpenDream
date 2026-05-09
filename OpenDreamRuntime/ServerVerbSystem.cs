@@ -254,6 +254,8 @@ public sealed partial class ServerVerbSystem : VerbSystem {
                     return false;
 
                 return srcMovable.Loc == connection.Mob;
+            case VerbAccessibility.UsrLoc:
+                return src == connection.Mob?.Loc;
             default:
                 // TODO: All the other kinds
                 return true;

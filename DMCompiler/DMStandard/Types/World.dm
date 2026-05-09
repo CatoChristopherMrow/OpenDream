@@ -66,7 +66,6 @@
 	proc/GetConfig(config_set,param)
 	proc/SetConfig(config_set,param,value)
 	proc/OpenPort(port)
-		set opendream_unimplemented = TRUE
 	proc/IsSubscribed(player, type)
 		set opendream_unsupported = "OpenDream does not have a premium tier"
 	proc/IsBanned(key,address,computer_id,type)

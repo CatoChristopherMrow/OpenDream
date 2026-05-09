@@ -13,9 +13,7 @@ proc/missile(Type, Start, End)
 /proc/obounds(Ref=src, Dist=0)
 	set opendream_unimplemented = TRUE
 /proc/run(File)
-	set opendream_unimplemented = TRUE
 /proc/shell(command)
-	set opendream_unimplemented = TRUE
 /proc/bound_pixloc(var/atom/Atom, var/Dir as num) as /pixloc
 	set opendream_unimplemented = TRUE
 

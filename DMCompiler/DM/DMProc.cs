@@ -297,8 +297,6 @@ internal sealed class DMProc {
                         VerbSrc = VerbSrcEnum.InUsr;
                     }  else if (deref == "loc") {
                         VerbSrc = VerbSrcEnum.UsrLoc;
-                        _compiler.UnimplementedWarning(statementSet.Location,
-                            "'set src = usr.loc' is unimplemented");
                     } else if (deref == "group") {
                         VerbSrc = VerbSrcEnum.UsrGroup;
                         _compiler.UnimplementedWarning(statementSet.Location,
@@ -1164,6 +1162,12 @@ internal sealed class DMProc {
     public void PushType(int typeId) {
         WriteOpcode(DreamProcOpcode.PushType);
         WriteTypeId(typeId);
+    }
+
+    public void PushModifiedType(int typeId, string variableOverridesJson) {
+        WriteOpcode(DreamProcOpcode.PushModifiedType);
+        WriteTypeId(typeId);
+        WriteString(variableOverridesJson);
     }
 
     public void PushProc(int procId) {

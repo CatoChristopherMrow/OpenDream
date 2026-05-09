@@ -30,6 +30,23 @@ internal static class DreamProcNativeMatrix {
         return new DreamValue(src);
     }
 
+    [DreamProc("Interpolate")]
+    [DreamProcParameter("Matrix2", Type = DreamValueTypeFlag.DreamObject)]
+    [DreamProcParameter("t", Type = DreamValueTypeFlag.Float)]
+    public static DreamValue NativeProc_Interpolate(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        DreamValue possibleMatrix = bundle.GetArgument(0, "Matrix2");
+        if (!possibleMatrix.TryGetValueAsDreamObject<DreamObjectMatrix>(out var matrixArg)) {
+            throw new Exception($"Invalid matrix for interpolation: {possibleMatrix.ToString()}");
+        }
+
+        if (!bundle.GetArgument(1, "t").TryGetValueAsFloat(out var t))
+            t = 0;
+
+        DreamObjectMatrix.InterpolateMatrix((DreamObjectMatrix)src!, matrixArg, t);
+        src!.IncRef();
+        return new DreamValue(src);
+    }
+
     [DreamProc("Multiply")]
     [DreamProcParameter("Matrix2", Type = DreamValueTypeFlag.DreamObject | DreamValueTypeFlag.Float)] // or "n"
     public static DreamValue NativeProc_Multiply(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {

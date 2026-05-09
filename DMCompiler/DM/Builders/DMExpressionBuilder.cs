@@ -2,6 +2,7 @@ using DMCompiler.Compiler;
 using Resource = DMCompiler.DM.Expressions.Resource;
 using DMCompiler.Compiler.DM.AST;
 using DMCompiler.DM.Expressions;
+using System.Text.Json;
 using static DMCompiler.DM.Builders.DMExpressionBuilder.ScopeMode;
 using String = DMCompiler.DM.Expressions.String;
 
@@ -497,10 +498,35 @@ internal class DMExpressionBuilder(ExpressionContext ctx, DMExpressionBuilder.Sc
             case DMASTConstantResource constResource: return new Resource(Compiler, constant.Location, constResource.Path);
             case DMASTConstantPath constPath: return BuildPath(constant.Location, constPath.Value.Path);
             case DMASTModifiedType constModifiedPath:
-                Compiler.UnimplementedWarning(constant.Location,
-                    "Using modified types in this way is unimplemented, and will just point to the original type");
+                if (!ObjectTree.TryGetDMObject(constModifiedPath.Value.Path, out var owner)) {
+                    return UnknownReference(constModifiedPath.Location, $"Type {constModifiedPath.Value.Path} does not exist");
+                }
 
-                return BuildPath(constant.Location, constModifiedPath.Value.Path);
+                if (constModifiedPath.VarOverrides is null || constModifiedPath.VarOverrides.Count == 0) {
+                    return new ModifiedTypeReference(constant.Location, owner, "{}");
+                }
+
+                var failed = false;
+                var overrides = new Dictionary<string, object?>();
+                foreach (var varOverride in constModifiedPath.VarOverrides) {
+                    if (!owner.HasLocalVariable(varOverride.Key)) {
+                        return UnknownIdentifier(constModifiedPath.Location, varOverride.Key);
+                    }
+
+                    var jsonExpression = BuildExpression(varOverride.Value);
+                    if (!jsonExpression.TryAsJsonRepresentation(Compiler, out var jsonValue)) {
+                        failed = true;
+                        break;
+                    }
+
+                    overrides[varOverride.Key] = jsonValue;
+                }
+
+                if (failed) {
+                    return BadExpression(WarningCode.BadExpression, constModifiedPath.Location, "Expected a constant expression");
+                }
+
+                return new ModifiedTypeReference(constant.Location, owner, JsonSerializer.Serialize(overrides));
             case DMASTUpwardPathSearch upwardSearch:
                 BuildExpression(upwardSearch.Path).TryAsConstant(Compiler, out var pathExpr);
                 if (pathExpr is not IConstantPath expr)

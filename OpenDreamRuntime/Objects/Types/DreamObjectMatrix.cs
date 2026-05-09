@@ -329,6 +329,15 @@ public sealed class DreamObjectMatrix(DreamObjectDefinition objectDefinition) : 
         matrix.F *= y;
     }
 
+    public static void InterpolateMatrix(DreamObjectMatrix matrix, DreamObjectMatrix target, float t) {
+        matrix.A += (target.A - matrix.A) * t;
+        matrix.B += (target.B - matrix.B) * t;
+        matrix.C += (target.C - matrix.C) * t;
+        matrix.D += (target.D - matrix.D) * t;
+        matrix.E += (target.E - matrix.E) * t;
+        matrix.F += (target.F - matrix.F) * t;
+    }
+
     /// <summary> Adds the second given matrix to the first given matrix. </summary>
     public static void AddMatrix(DreamObjectMatrix lMatrix, DreamObjectMatrix rMatrix) {
         lMatrix.A += rMatrix.A;

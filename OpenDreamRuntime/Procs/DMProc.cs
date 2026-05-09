@@ -355,7 +355,8 @@ public sealed class DMProcState : ProcState {
         {DreamProcOpcode.CreateListNResources, DMOpcodeHandlers.CreateListNResources},
         {DreamProcOpcode.IsTypeDirect, DMOpcodeHandlers.IsTypeDirect},
         {DreamProcOpcode.ReturnReferenceValue, DMOpcodeHandlers.ReturnReferenceValue},
-        {DreamProcOpcode.ReturnFloat, DMOpcodeHandlers.ReturnFloat}
+        {DreamProcOpcode.ReturnFloat, DMOpcodeHandlers.ReturnFloat},
+        {DreamProcOpcode.PushModifiedType, DMOpcodeHandlers.PushModifiedType}
     };
 
     public static readonly unsafe delegate*<DMProcState, ProcStatus>[] OpcodeHandlersTable;
