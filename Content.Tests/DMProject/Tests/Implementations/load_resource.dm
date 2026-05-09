@@ -1,4 +1,4 @@
-// NOBYOND - implementation smoke test is not a BYOND parity test
+// NOBYOND - load_resource is OpenDream-specific
 /proc/RunTest()
 	text2file("hello", "load_resource_source.txt")
 

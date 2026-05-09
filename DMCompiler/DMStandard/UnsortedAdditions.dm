@@ -41,6 +41,9 @@ proc/missile(Type, Start, End)
 		pixel_y = (bottom + top) / 2
 
 	var/pixloc/result = pixloc(pixel_x, pixel_y, Atom.z)
+	result.loc = Atom.loc
+	result.step_x = pixel_x - ((Atom.x - 1) * world.icon_size) - 1
+	result.step_y = pixel_y - ((Atom.y - 1) * world.icon_size) - 1
 	return result
 
 /proc/_dm_db_new_con(filename)

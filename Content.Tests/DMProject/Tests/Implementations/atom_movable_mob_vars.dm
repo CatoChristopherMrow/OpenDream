@@ -1,4 +1,3 @@
-// NOBYOND - implementation smoke test is not a BYOND parity test
 /proc/RunTest()
 	var/obj/object = new
 	object.suffix = "suffix"
@@ -30,7 +29,6 @@
 	movable.bound_y = 2
 	movable.bound_width = 16
 	movable.bound_height = 24
-	movable.bounds = "1,2 to 16,24"
 
 	ASSERT(movable.animate_movement == NO_STEPS)
 	ASSERT(islist(movable.locs))
@@ -39,15 +37,26 @@
 	ASSERT(movable.bound_y == 2)
 	ASSERT(movable.bound_width == 16)
 	ASSERT(movable.bound_height == 24)
+	ASSERT(movable.bounds == "2,3 to 17,26")
+
+	movable.bounds = "1,2 to 16,24"
+	ASSERT(movable.bound_x == 0)
+	ASSERT(movable.bound_y == 1)
+	ASSERT(movable.bound_width == 16)
+	ASSERT(movable.bound_height == 23)
 	ASSERT(movable.bounds == "1,2 to 16,24")
 
 	var/mob/mob = new
-	mob.group = list("alpha")
 	mob.see_infrared = 1
 	mob.see_in_dark = 7
 
-	ASSERT(mob.group.len == 1)
-	ASSERT(mob.group[1] == "alpha")
+	ASSERT(islist(mob.group))
+	var/group_write_error = FALSE
+	try
+		mob.group = list("alpha")
+	catch
+		group_write_error = TRUE
+	ASSERT(group_write_error)
 	ASSERT(mob.see_infrared == 1)
 	ASSERT(mob.see_in_dark == 7)
 

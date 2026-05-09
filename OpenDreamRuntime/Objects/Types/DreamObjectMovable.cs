@@ -1,3 +1,4 @@
+using System.Globalization;
 using OpenDreamRuntime.Procs;
 using OpenDreamRuntime.Rendering;
 using OpenDreamShared.Dream;
@@ -97,6 +98,9 @@ public class DreamObjectMovable : DreamObjectAtom {
             case "bound_y":
                 value = new(_boundY ?? 0);
                 return true;
+            case "bounds":
+                value = new(GetBoundsString());
+                return true;
             case "screen_loc":
                 value = (ScreenLoc != null) ? new(ScreenLoc) : DreamValue.Null;
                 return true;
@@ -176,6 +180,10 @@ public class DreamObjectMovable : DreamObjectAtom {
             case "bound_height":
                 value.TryGetValueAsFloat(out var boundHeight);
                 _boundHeight = boundHeight;
+                break;
+            case "bounds":
+                value.TryGetValueAsString(out var bounds);
+                SetBounds(bounds);
                 break;
             case "particles":
                 if (value.TryGetValueAsDreamObject<DreamObjectParticles>(out var particles)) {
@@ -265,6 +273,60 @@ public class DreamObjectMovable : DreamObjectAtom {
         var boundX = (int)MathF.Round((float)(_boundX ?? 0));
         var boundY = (int)MathF.Round((float)(_boundY ?? 0));
         AtomManager.SetMovableBoundOffset(this, (boundX, boundY));
+    }
+
+    private string GetBoundsString() {
+        var x1 = (_boundX ?? 0) + 1;
+        var y1 = (_boundY ?? 0) + 1;
+        var x2 = (_boundX ?? 0) + (_boundWidth ?? DreamManager.WorldInstance.IconSize);
+        var y2 = (_boundY ?? 0) + (_boundHeight ?? DreamManager.WorldInstance.IconSize);
+
+        if (x1 == 1 && y1 == 1)
+            return $"{FormatBoundsNumber(x2)},{FormatBoundsNumber(y2)}";
+
+        return $"{FormatBoundsNumber(x1)},{FormatBoundsNumber(y1)} to {FormatBoundsNumber(x2)},{FormatBoundsNumber(y2)}";
+    }
+
+    private void SetBounds(string? bounds) {
+        if (string.IsNullOrWhiteSpace(bounds))
+            return;
+
+        var halves = bounds.Split(" to ", 2, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (halves.Length == 1) {
+            if (!TryParseBoundsPair(halves[0], out var width, out var height))
+                return;
+
+            _boundX = 0;
+            _boundY = 0;
+            _boundWidth = width;
+            _boundHeight = height;
+            UpdateSpriteBoundOffset();
+            return;
+        }
+
+        if (!TryParseBoundsPair(halves[0], out var x1, out var y1) ||
+            !TryParseBoundsPair(halves[1], out var x2, out var y2))
+            return;
+
+        _boundX = x1 - 1;
+        _boundY = y1 - 1;
+        _boundWidth = x2 - x1 + 1;
+        _boundHeight = y2 - y1 + 1;
+        UpdateSpriteBoundOffset();
+    }
+
+    private static bool TryParseBoundsPair(string text, out double x, out double y) {
+        x = 0;
+        y = 0;
+
+        var parts = text.Split(',', 2, StringSplitOptions.TrimEntries);
+        return parts.Length == 2 &&
+            double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out x) &&
+            double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out y);
+    }
+
+    private static string FormatBoundsNumber(double number) {
+        return number.ToString("G", CultureInfo.InvariantCulture);
     }
 
     protected override DreamValue CreatePixLoc() {

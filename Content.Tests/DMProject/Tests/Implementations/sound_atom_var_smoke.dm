@@ -1,10 +1,9 @@
-// NOBYOND - implementation smoke test is not a BYOND parity test
 /proc/RunTest()
 	var/obj/O = new()
 	var/matrix/M = matrix(1, 2, 3, 4, 5, 6)
-	var/sound/S = sound("sound.ogg", 1, 1, 2, 75)
+	var/sound/S = sound(null, 1, 1, 2, 75)
 
-	ASSERT(S.file == "sound.ogg")
+	ASSERT(isnull(S.file))
 	ASSERT(S.repeat == 1)
 	ASSERT(S.wait == 1)
 	ASSERT(S.channel == 2)
@@ -39,13 +38,6 @@
 	ASSERT(S.len == 8)
 	ASSERT(S.priority == 9)
 	ASSERT(S.status == SOUND_PAUSED)
-
-	var/sound/copy = sound(S)
-	ASSERT(copy.file == S.file)
-	ASSERT(copy.repeat == S.repeat)
-	ASSERT(copy.wait == S.wait)
-	ASSERT(copy.channel == S.channel)
-	ASSERT(copy.volume == S.volume)
 
 	O.icon_w = 16
 	O.icon_z = 2

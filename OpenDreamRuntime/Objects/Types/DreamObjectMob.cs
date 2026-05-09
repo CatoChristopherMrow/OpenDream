@@ -6,6 +6,7 @@ namespace OpenDreamRuntime.Objects.Types;
 public sealed class DreamObjectMob : DreamObjectMovable {
     public DreamConnection? Connection;
     public string? Key;
+    private readonly DreamList _group;
 
     public int SeeInvisible {
         get => _sightComponent.SeeInvisibility;
@@ -27,12 +28,18 @@ public sealed class DreamObjectMob : DreamObjectMovable {
 
     public DreamObjectMob(DreamObjectDefinition objectDefinition) : base(objectDefinition) {
         _sightComponent = EntityManager.AddComponent<DreamMobSightComponent>(Entity);
+        _group = ObjectTree.CreateList();
 
         objectDefinition.Variables["see_invisible"].TryGetValueAsInteger(out var seeVis);
         objectDefinition.Variables["sight"].TryGetValueAsInteger(out var sight);
 
         SeeInvisible = seeVis;
         Sight = (SightFlags)sight;
+    }
+
+    protected override void HandleDeletion() {
+        _group.DecRef();
+        base.HandleDeletion();
     }
 
     protected override bool TryGetVar(string varName, out DreamValue value) {
@@ -52,6 +59,10 @@ public sealed class DreamObjectMob : DreamObjectMovable {
                 return true;
             case "sight":
                 value = new((int)Sight);
+                return true;
+            case "group":
+                _group.IncRef();
+                value = new(_group);
                 return true;
             default:
                 return base.TryGetVar(varName, out value);
@@ -97,6 +108,8 @@ public sealed class DreamObjectMob : DreamObjectMovable {
 
                 Sight = (SightFlags)sight;
                 break;
+            case "group":
+                throw new Exception("Cannot write to mob.group.");
             default:
                 base.SetVar(varName, value);
                 break;

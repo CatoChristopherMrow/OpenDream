@@ -149,6 +149,8 @@ public class DreamObjectAtom(DreamObjectDefinition objectDefinition) : DreamObje
 
                 break;
             }
+            case "verbs":
+                throw new Exception("Cannot write to atom.verbs.");
             case "filters": {
                 Filters.Cut();
 

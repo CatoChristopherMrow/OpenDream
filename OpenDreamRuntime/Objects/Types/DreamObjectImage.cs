@@ -9,6 +9,8 @@ public sealed class DreamObjectImage : DreamObject {
     public EntityUid Entity = EntityUid.Invalid;
     public readonly DMISpriteComponent? SpriteComponent;
     private DreamObject? _loc;
+    private readonly DreamList _contents;
+    private readonly DreamList _visContents;
     private DreamList _overlays;
     private DreamList _underlays;
     private readonly DreamList _filters;
@@ -27,6 +29,9 @@ public sealed class DreamObjectImage : DreamObject {
     };
 
     public DreamObjectImage(DreamObjectDefinition objectDefinition) : base(objectDefinition) {
+        _contents = ObjectTree.CreateList();
+        _visContents = ObjectTree.CreateList();
+
         if (objectDefinition.IsSubtypeOf(ObjectTree.MutableAppearance)) {
             // /mutable_appearance.overlays and /mutable_appearance.underlays are normal lists
             _overlays = ObjectTree.CreateList();
@@ -100,6 +105,14 @@ public sealed class DreamObjectImage : DreamObject {
             case "filters":
                 _filters.IncRef();
                 value = new(_filters);
+                return true;
+            case "contents":
+                _contents.IncRef();
+                value = new(_contents);
+                return true;
+            case "vis_contents":
+                _visContents.IncRef();
+                value = new(_visContents);
                 return true;
             default: {
                 if (AtomManager.IsValidAppearanceVar(varName)) {
@@ -240,6 +253,21 @@ public sealed class DreamObjectImage : DreamObject {
 
                 break;
             }
+            case "contents":
+                throw new Exception("special list may not be cut");
+            case "vis_contents":
+                break;
+            case "verbs":
+                throw new Exception("Cannot write to atom.verbs.");
+            case "glide_size":
+            case "pixel_step_size":
+                base.SetVar("glide_size", value);
+                base.SetVar("pixel_step_size", value);
+                using (var mutableAppearance = IsMutableAppearance ? MutableAppearance! : AtomManager.MustGetAppearance(this).ToMutable()) {
+                    AtomManager.SetAppearanceVar(mutableAppearance, "glide_size", value);
+                    AtomManager.SetAtomAppearance(this, mutableAppearance);
+                }
+                break;
             case "override": {
                 using var mutableAppearance = IsMutableAppearance ? MutableAppearance! : AtomManager.MustGetAppearance(this).ToMutable();
                 mutableAppearance.Override = value.IsTruthy();
@@ -269,6 +297,8 @@ public sealed class DreamObjectImage : DreamObject {
         }
 
         MutableAppearance?.Dispose();
+        _contents.DecRef();
+        _visContents.DecRef();
         _overlays.DecRef();
         _underlays.DecRef();
         _filters.DecRef();
