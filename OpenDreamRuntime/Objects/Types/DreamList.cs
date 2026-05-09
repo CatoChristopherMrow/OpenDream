@@ -169,6 +169,9 @@ public class DreamList : DreamObject, IDreamList {
     [MustDisposeResource]
     public virtual DreamValue GetValue(DreamValue key) {
         if (key.TryGetValueAsInteger(out int keyInteger)) {
+            if (keyInteger < 1 || keyInteger > _values.Count)
+                return DreamValue.Null;
+
             var value = _values[keyInteger - 1]; //1-indexed
 
             value.IncRef();

@@ -17,11 +17,13 @@ public sealed class DMIResource : DreamResource {
 
     private readonly IClyde _clyde;
     private readonly ITaskManager _taskManager;
+    private readonly int _mainThreadId;
     private readonly Dictionary<string, State> _states;
 
-    public DMIResource(int id, byte[] data, IClyde clyde, ITaskManager taskManager) : base(id, data) {
+    public DMIResource(int id, byte[] data, IClyde clyde, ITaskManager taskManager, int mainThreadId) : base(id, data) {
         _clyde = clyde;
         _taskManager = taskManager;
+        _mainThreadId = mainThreadId;
         _states = new Dictionary<string, State>();
         ProcessDMIData();
     }
@@ -54,6 +56,11 @@ public sealed class DMIResource : DreamResource {
     }
 
     private void LoadTextureOnMainThread(Image<Rgba32> image, DMIParser.ParsedDMIDescription description) {
+        if (Environment.CurrentManagedThreadId == _mainThreadId) {
+            FinalizeDMIData(image, description);
+            return;
+        }
+
         TaskCompletionSource finished = new();
 
         _taskManager.RunOnMainThread(() => {

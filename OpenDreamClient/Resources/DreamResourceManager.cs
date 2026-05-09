@@ -46,6 +46,7 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
     [Dependency] private ITaskManager _taskManager = default!;
 
     private ResPath _cacheDirectory;
+    private int _mainThreadId;
 
     private ISawmill _sawmill = default!;
 
@@ -53,6 +54,7 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
 
     public void Initialize() {
         _sawmill = Logger.GetSawmill("opendream.res");
+        _mainThreadId = Environment.CurrentManagedThreadId;
 
         _netManager.RegisterNetMessage<MsgBrowseResource>(RxBrowseResource);
         _netManager.RegisterNetMessage<MsgBrowseResourceResponse>(RxBrowseResourceResponse);
@@ -217,7 +219,7 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
 
     private DreamResource LoadResourceFromData(Type resourceType, int resourceId, byte[] data) {
         object[] args = resourceType == typeof(DMIResource)
-            ? new object[] { resourceId, data, _clyde, _taskManager }
+            ? new object[] { resourceId, data, _clyde, _taskManager, _mainThreadId }
             : new object[] { resourceId, data };
 
         var resource = (DreamResource)_typeFactory.CreateInstance(resourceType, args);
