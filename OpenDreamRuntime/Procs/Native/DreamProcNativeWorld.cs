@@ -153,6 +153,11 @@ internal static class DreamProcNativeWorld {
         }
 
         // TODO: Actually return profiling data
+        // BYOND accepts world.Profile(command, "json") as shorthand for the format.
+        if (string.IsNullOrEmpty(format) && type == "json") {
+            format = type;
+            type = null;
+        }
 
         if (format == "json") {
             return new("[]");

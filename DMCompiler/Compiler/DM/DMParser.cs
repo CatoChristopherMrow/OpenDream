@@ -41,6 +41,7 @@ namespace DMCompiler.Compiler.DM {
         public static readonly TokenType[] LtGtComparisonTypes = [
             TokenType.DM_LessThan,
             TokenType.DM_LessThanEquals,
+            TokenType.DM_LessThanEqualsGreaterThan,
             TokenType.DM_GreaterThan,
             TokenType.DM_GreaterThanEquals
         ];
@@ -118,6 +119,7 @@ namespace DMCompiler.Compiler.DM {
             TokenType.DM_LeftShiftEquals,
             TokenType.DM_LessThan,
             TokenType.DM_LessThanEquals,
+            TokenType.DM_LessThanEqualsGreaterThan,
             TokenType.DM_Minus,
             TokenType.DM_MinusEquals,
             TokenType.DM_MinusMinus,
@@ -2071,6 +2073,7 @@ namespace DMCompiler.Compiler.DM {
                     switch (token.Type) {
                         case TokenType.DM_LessThan: a = new DMASTLessThan(token.Location, a, b); break;
                         case TokenType.DM_LessThanEquals: a = new DMASTLessThanOrEqual(token.Location, a, b); break;
+                        case TokenType.DM_LessThanEqualsGreaterThan: a = new DMASTCompare(token.Location, a, b); break;
                         case TokenType.DM_GreaterThan: a = new DMASTGreaterThan(token.Location, a, b); break;
                         case TokenType.DM_GreaterThanEquals: a = new DMASTGreaterThanOrEqual(token.Location, a, b); break;
                     }

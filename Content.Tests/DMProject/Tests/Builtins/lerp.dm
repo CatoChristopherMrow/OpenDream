@@ -9,3 +9,16 @@
 	ASSERT(lerp(1,-5,0.25) == -0.5)
 	ASSERT(lerp(1,5,-1) == -3)
 	ASSERT(lerp(1,5,2) == 9)
+
+	var/vector/V = lerp(vector(1, 2), vector(5, 10), 0.25)
+	ASSERT(istype(V, /vector))
+	ASSERT(V.len == 2)
+	ASSERT(V.x == 2)
+	ASSERT(V.y == 4)
+
+	var/vector/V3 = lerp(vector(1, 2), vector(5, 10, 15), 0.25)
+	ASSERT(istype(V3, /vector))
+	ASSERT(V3.len == 3)
+	ASSERT(V3.x == 2)
+	ASSERT(V3.y == 4)
+	ASSERT(V3.z == 3.75)

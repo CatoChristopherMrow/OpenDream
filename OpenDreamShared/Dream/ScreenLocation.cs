@@ -34,6 +34,7 @@ public sealed class ScreenLocation {
     public int X, Y;
     public int PixelOffsetX, PixelOffsetY;
     public ScreenLocation? Range;
+    public bool AnchorToScreenBounds;
 
     public int RepeatX => Range?.X - X + 1 ?? 1;
     public int RepeatY => Range?.Y - Y + 1 ?? 1;
@@ -42,10 +43,20 @@ public sealed class ScreenLocation {
 
     private static string[] _keywords = [
         "CENTER",
+        "MIDDLE",
         "WEST", "EAST", "LEFT", "RIGHT",
         "NORTH", "SOUTH", "TOP", "BOTTOM",
         "TOPLEFT", "TOPRIGHT",
-        "BOTTOMLEFT", "BOTTOMRIGHT"
+        "BOTTOMLEFT", "BOTTOMRIGHT",
+        "NORTHWEST", "NORTHEAST",
+        "SOUTHWEST", "SOUTHEAST",
+        "SCREEN_CENTER", "SCREEN_MIDDLE",
+        "SCREEN_WEST", "SCREEN_EAST", "SCREEN_LEFT", "SCREEN_RIGHT",
+        "SCREEN_NORTH", "SCREEN_SOUTH", "SCREEN_TOP", "SCREEN_BOTTOM",
+        "SCREEN_TOPLEFT", "SCREEN_TOPRIGHT",
+        "SCREEN_BOTTOMLEFT", "SCREEN_BOTTOMRIGHT",
+        "SCREEN_NORTHWEST", "SCREEN_NORTHEAST",
+        "SCREEN_SOUTHWEST", "SCREEN_SOUTHEAST"
     ];
 
     public ScreenLocation(int x, int y, int pixelOffsetX, int pixelOffsetY, ScreenLocation? range = null) {
@@ -129,7 +140,35 @@ public sealed class ScreenLocation {
             Y = 0;
 
             (HorizontalAnchor, VerticalAnchor) = coordinateSplit[0].Trim() switch {
-                "CENTER" => (HorizontalAnchor.Center, VerticalAnchor.Center),
+                var keyword when TryNormalizeScreenKeyword(keyword, out var normalizedKeyword) => normalizedKeyword switch {
+                    "CENTER" or "MIDDLE" => (HorizontalAnchor.Center, VerticalAnchor.Center),
+                    "WEST" => (HorizontalAnchor.West, VerticalAnchor.Center),
+                    "LEFT" => (HorizontalAnchor.Left, VerticalAnchor.Center),
+                    "EAST" => (HorizontalAnchor.East, VerticalAnchor.Center),
+                    "RIGHT" => (HorizontalAnchor.Right, VerticalAnchor.Center),
+                    "NORTH" => (HorizontalAnchor.Center, VerticalAnchor.North),
+                    "TOP" => (HorizontalAnchor.Center, VerticalAnchor.Top),
+                    "SOUTH" => (HorizontalAnchor.Center, VerticalAnchor.South),
+                    "BOTTOM" => (HorizontalAnchor.Center, VerticalAnchor.Bottom),
+                    "NORTHWEST" => (HorizontalAnchor.West, VerticalAnchor.North),
+                    "TOPLEFT" => (HorizontalAnchor.Left, VerticalAnchor.Top),
+                    "NORTHEAST" => (HorizontalAnchor.East, VerticalAnchor.North),
+                    "TOPRIGHT" => (HorizontalAnchor.Right, VerticalAnchor.Top),
+                    "SOUTHWEST" => (HorizontalAnchor.West, VerticalAnchor.South),
+                    "BOTTOMLEFT" => (HorizontalAnchor.Left, VerticalAnchor.Bottom),
+                    "SOUTHEAST" => (HorizontalAnchor.East, VerticalAnchor.South),
+                    "BOTTOMRIGHT" => (HorizontalAnchor.Right, VerticalAnchor.Bottom),
+                    _ => throw new Exception($"Invalid screen_loc {screenLoc}")
+                },
+                "CENTER" or "MIDDLE" => (HorizontalAnchor.Center, VerticalAnchor.Center),
+                "WEST" => (HorizontalAnchor.West, VerticalAnchor.Center),
+                "LEFT" => (HorizontalAnchor.Left, VerticalAnchor.Center),
+                "EAST" => (HorizontalAnchor.East, VerticalAnchor.Center),
+                "RIGHT" => (HorizontalAnchor.Right, VerticalAnchor.Center),
+                "NORTH" => (HorizontalAnchor.Center, VerticalAnchor.North),
+                "TOP" => (HorizontalAnchor.Center, VerticalAnchor.Top),
+                "SOUTH" => (HorizontalAnchor.Center, VerticalAnchor.South),
+                "BOTTOM" => (HorizontalAnchor.Center, VerticalAnchor.Bottom),
                 "NORTHWEST" => (HorizontalAnchor.West, VerticalAnchor.North),
                 "TOPLEFT" => (HorizontalAnchor.Left, VerticalAnchor.Top),
                 "NORTHEAST" => (HorizontalAnchor.East, VerticalAnchor.North),
@@ -195,8 +234,12 @@ public sealed class ScreenLocation {
                 offsetStr = piece;
             }
 
+            if (TryNormalizeScreenKeyword(offsetStr, out var normalizedKeyword))
+                offsetStr = normalizedKeyword;
+
             switch (offsetStr) {
                 case "CENTER":
+                case "MIDDLE":
                     if (settingHorizontal)
                         HorizontalAnchor = HorizontalAnchor.Center;
                     else
@@ -266,5 +309,17 @@ public sealed class ScreenLocation {
         }
 
         return settingHorizontal != isHorizontal;
+    }
+
+    private bool TryNormalizeScreenKeyword(string keyword, out string normalizedKeyword) {
+        const string screenPrefix = "SCREEN_";
+        if (keyword.StartsWith(screenPrefix, StringComparison.Ordinal)) {
+            AnchorToScreenBounds = true;
+            normalizedKeyword = keyword[screenPrefix.Length..];
+            return true;
+        }
+
+        normalizedKeyword = keyword;
+        return false;
     }
 }

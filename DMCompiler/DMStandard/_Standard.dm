@@ -71,7 +71,6 @@ proc/max(A) as num|text|null
 proc/md5(T) as text|null
 proc/min(A) as num|text|null
 proc/noise_hash(...) as num
-	set opendream_unimplemented = 1
 	return 0.5
 proc/nonspantext(Haystack, Needles, Start = 1) as num
 proc/nonspantext_char(Haystack, Needles, Start = 1) as num

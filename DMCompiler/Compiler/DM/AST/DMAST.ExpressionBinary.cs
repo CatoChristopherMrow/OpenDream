@@ -38,6 +38,7 @@ public sealed class DMASTEquivalent(Location location, DMASTExpression a, DMASTE
 public sealed class DMASTNotEquivalent(Location location, DMASTExpression a, DMASTExpression b) : DMASTBinary(location, a, b);
 public sealed class DMASTLessThan(Location location, DMASTExpression a, DMASTExpression b) : DMASTBinary(location, a, b);
 public sealed class DMASTLessThanOrEqual(Location location, DMASTExpression a, DMASTExpression b) : DMASTBinary(location, a, b);
+public sealed class DMASTCompare(Location location, DMASTExpression a, DMASTExpression b) : DMASTBinary(location, a, b);
 public sealed class DMASTGreaterThan(Location location, DMASTExpression a, DMASTExpression b) : DMASTBinary(location, a, b);
 public sealed class DMASTGreaterThanOrEqual(Location location, DMASTExpression a, DMASTExpression b) : DMASTBinary(location, a, b);
 public sealed class DMASTMultiply(Location location, DMASTExpression a, DMASTExpression b) : DMASTBinary(location, a, b);

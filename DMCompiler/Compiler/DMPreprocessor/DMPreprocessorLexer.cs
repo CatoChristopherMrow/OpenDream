@@ -151,7 +151,15 @@ internal sealed class DMPreprocessorLexer {
 
                         return CreateToken(TokenType.DM_Preproc_Punctuator, "<<");
                     }
-                    case '=': Advance(); return CreateToken(TokenType.DM_Preproc_Punctuator, "<=");
+                    case '=':
+                        if (_source.Peek() == '>') {
+                            Advance();
+                            Advance();
+                            return CreateToken(TokenType.DM_Preproc_Punctuator, "<=>");
+                        }
+
+                        Advance();
+                        return CreateToken(TokenType.DM_Preproc_Punctuator, "<=");
                     case '>': Advance(); return CreateToken(TokenType.DM_Preproc_Punctuator, "<>");
                     default: return CreateToken(TokenType.DM_Preproc_Punctuator, '<');
                 }

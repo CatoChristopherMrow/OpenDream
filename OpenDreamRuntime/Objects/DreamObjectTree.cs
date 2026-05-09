@@ -42,6 +42,7 @@ public sealed partial class DreamObjectTree {
     public TreeEntry Regex { get; private set; } = default!;
     public TreeEntry Filter { get; private set; } = default!;
     public TreeEntry Vector { get; private set; } = default!;
+    public TreeEntry PixLoc { get; private set; } = default!;
     public TreeEntry Icon { get; private set; } = default!;
     public TreeEntry Image { get; private set; } = default!;
     public TreeEntry MutableAppearance { get; private set; } = default!;
@@ -344,6 +345,7 @@ public sealed partial class DreamObjectTree {
         Regex = GetTreeEntry("/regex");
         Filter = GetTreeEntry("/dm_filter");
         Vector = GetTreeEntry("/vector");
+        PixLoc = GetTreeEntry("/pixloc");
         Icon = GetTreeEntry("/icon");
         Image = GetTreeEntry("/image");
         MutableAppearance = GetTreeEntry("/mutable_appearance");

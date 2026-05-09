@@ -1569,6 +1569,14 @@ namespace OpenDreamRuntime.Procs {
             return ProcStatus.Continue;
         }
 
+        public static ProcStatus Compare(DMProcState state) {
+            using var second = state.Pop();
+            using var first = state.Pop();
+
+            state.Push(new DreamValue(CompareValues(first, second)));
+            return ProcStatus.Continue;
+        }
+
         public static ProcStatus CompareNotEquals(DMProcState state) {
             using var second = state.Pop();
             using var first = state.Pop();
@@ -3032,6 +3040,29 @@ namespace OpenDreamRuntime.Procs {
 
             // Behaviour is otherwise equivalent (pun intended) to ==
             return IsEqual(first, second);
+        }
+
+        private static int CompareValues(DreamValue first, DreamValue second) {
+            if (IsCompareEqual(first, second))
+                return 0;
+
+            return IsLessThan(first, second) ? -1 : 1;
+        }
+
+        private static bool IsCompareEqual(DreamValue first, DreamValue second) {
+            if (IsEqual(first, second))
+                return true;
+
+            if (first.TryGetValueAsFloat(out var lhs) && lhs == 0.0f && second.IsNull)
+                return true;
+
+            if (first.IsNull && second.TryGetValueAsFloat(out var rhs) && rhs == 0.0f)
+                return true;
+
+            if (first.IsNull && second.TryGetValueAsString(out var str) && str == string.Empty)
+                return true;
+
+            return false;
         }
 
         private static bool IsGreaterThan(DreamValue first, DreamValue second) {

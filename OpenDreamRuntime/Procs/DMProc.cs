@@ -353,6 +353,7 @@ public sealed class DMProcState : ProcState {
         {DreamProcOpcode.PushStringFloat, DMOpcodeHandlers.PushStringFloat},
         {DreamProcOpcode.SwitchOnFloat, DMOpcodeHandlers.SwitchOnFloat},
         {DreamProcOpcode.SwitchOnString, DMOpcodeHandlers.SwitchOnString},
+        {DreamProcOpcode.Compare, DMOpcodeHandlers.Compare},
         {DreamProcOpcode.JumpIfReferenceFalse, DMOpcodeHandlers.JumpIfReferenceFalse},
         {DreamProcOpcode.PushNOfStringFloats, DMOpcodeHandlers.PushNOfStringFloat},
         {DreamProcOpcode.CreateListNFloats, DMOpcodeHandlers.CreateListNFloats},
@@ -944,14 +945,20 @@ public sealed class DMProcState : ProcState {
                 return new(DreamManager.WorldInstance);
             case DMReference.Type.Callee: {
                 // TODO: BYOND seems to reuse the same object. At least, callee == callee
-                var callee = Proc.ObjectTree.CreateObject<DreamObjectCallee>(Proc.ObjectTree.Callee);
-
-                callee.ProcState = this;
-                callee.ProcStateId = Id;
-                return new(callee);
+                return DreamObjectCallee.CreateDreamValue(Proc.ObjectTree, this);
             }
             case DMReference.Type.Caller: {
-                // TODO
+                var foundSelf = false;
+                foreach (var state in Thread.InspectStack()) {
+                    if (!foundSelf) {
+                        foundSelf = ReferenceEquals(state, this);
+                        continue;
+                    }
+
+                    if (state is DMProcState caller)
+                        return DreamObjectCallee.CreateDreamValue(Proc.ObjectTree, caller);
+                }
+
                 return DreamValue.Null;
             }
             case DMReference.Type.Field: {

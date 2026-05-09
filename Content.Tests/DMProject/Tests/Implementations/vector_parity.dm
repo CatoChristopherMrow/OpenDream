@@ -1,0 +1,78 @@
+/proc/AssertClose(A, B)
+	ASSERT(abs(A - B) < 0.0001)
+
+/proc/RunTest()
+	var/vector/a = vector(3, 4)
+	ASSERT(a.len == 2)
+	ASSERT(a.x == 3)
+	ASSERT(a.y == 4)
+	ASSERT(a.z == 0)
+	ASSERT(a.size == 5)
+
+	var/vector/b = vector(1, 2, 3)
+	ASSERT(b.len == 3)
+	ASSERT(b.z == 3)
+
+	var/vector/c = new /vector("5,6")
+	ASSERT(c.len == 2)
+	ASSERT(c.x == 5)
+	ASSERT(c.y == 6)
+
+	var/vector/d = new /vector("7x8x9")
+	ASSERT(d.len == 3)
+	ASSERT(d.x == 7)
+	ASSERT(d.y == 8)
+	ASSERT(d.z == 9)
+
+	var/vector/e = new /vector(list(10, 11))
+	ASSERT(e.len == 2)
+	ASSERT(e.x == 10)
+	ASSERT(e.y == 11)
+
+	var/vector/f = new /vector(list(12, 13, 14))
+	ASSERT(f.len == 3)
+	ASSERT(f.z == 14)
+
+	var/vector/copy = new /vector(f)
+	ASSERT(copy.len == 3)
+	ASSERT(copy.x == 12)
+	ASSERT(copy.y == 13)
+	ASSERT(copy.z == 14)
+
+	var/vector/cross2d = vector(1, 0).Cross(vector(0, 1))
+	ASSERT(istype(cross2d, /vector))
+	ASSERT(cross2d.len == 3)
+	ASSERT(cross2d.x == 0)
+	ASSERT(cross2d.y == 0)
+	ASSERT(cross2d.z == 1)
+
+	var/vector/cross2d_reversed = vector(0, 1).Cross(vector(1, 0))
+	ASSERT(cross2d_reversed.x == 0)
+	ASSERT(cross2d_reversed.y == 0)
+	ASSERT(cross2d_reversed.z == -1)
+	ASSERT(vector(2, 3).Dot(vector(4, 5)) == 23)
+
+	var/vector/crossed = vector(1, 0, 0).Cross(vector(0, 1, 0))
+	ASSERT(istype(crossed, /vector))
+	ASSERT(crossed.len == 3)
+	ASSERT(crossed.x == 0)
+	ASSERT(crossed.y == 0)
+	ASSERT(crossed.z == 1)
+
+	var/vector/interpolated = vector(0, 0).Interpolate(vector(10, 20), 0.25)
+	AssertClose(interpolated.x, 2.5)
+	AssertClose(interpolated.y, 5)
+
+	var/vector/normalized = vector(3, 4)
+	normalized.Normalize()
+	AssertClose(normalized.size, 1)
+	AssertClose(normalized.x, 0.6)
+	AssertClose(normalized.y, 0.8)
+
+	var/vector/turned = vector(1, 0).Turn(90)
+	AssertClose(turned.x, 0)
+	AssertClose(turned.y, 1)
+
+	var/vector/turned_back = vector(0, 1).Turn(-90)
+	AssertClose(turned_back.x, 1)
+	AssertClose(turned_back.y, 0)

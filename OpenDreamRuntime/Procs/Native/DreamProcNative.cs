@@ -17,8 +17,21 @@ internal static class DreamProcNative {
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_copytext);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_copytext_char);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_CRASH);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc__dm_db_close);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc__dm_db_columns);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc__dm_db_connect);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc__dm_db_error_msg);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc__dm_db_execute);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc__dm_db_is_connected);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc__dm_db_new_con);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc__dm_db_new_query);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc__dm_db_next_row);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc__dm_db_quote);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc__dm_db_row_count);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc__dm_db_rows_affected);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_fcopy);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_fcopy_rsc);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_load_resource);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_fdel);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_fexists);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_file);
@@ -71,6 +84,7 @@ internal static class DreamProcNative {
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_max);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_md5);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_min);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_noise_hash);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_nonspantext);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_nonspantext_char);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_num2text);
@@ -196,6 +210,11 @@ internal static class DreamProcNative {
 
         objectTree.SetNativeProc(objectTree.Savefile, DreamProcNativeSavefile.NativeProc_ExportText);
         objectTree.SetNativeProc(objectTree.Savefile, DreamProcNativeSavefile.NativeProc_Flush);
+        objectTree.SetNativeProc(objectTree.Savefile, DreamProcNativeSavefile.NativeProc_Lock);
+        objectTree.SetNativeProc(objectTree.Savefile, DreamProcNativeSavefile.NativeProc_Unlock);
+
+        objectTree.SetNativeProc(objectTree.Vector, DreamProcNativeVector.NativeProc_Cross);
+        objectTree.SetNativeProc(objectTree.Vector, DreamProcNativeVector.NativeProc_Turn);
 
         objectTree.SetNativeProc(objectTree.World, DreamProcNativeWorld.NativeProc_Export);
         objectTree.SetNativeProc(objectTree.World, DreamProcNativeWorld.NativeProc_GetConfig);
@@ -220,6 +239,7 @@ internal static class DreamProcNative {
         objectTree.SetNativeProc(objectTree.DatabaseQuery, DreamProcNativeDatabaseQuery.NativeProc_GetColumn);
         objectTree.SetNativeProc(objectTree.DatabaseQuery, DreamProcNativeDatabaseQuery.NativeProc_GetRowData);
         objectTree.SetNativeProc(objectTree.DatabaseQuery, DreamProcNativeDatabaseQuery.NativeProc_NextRow);
+        objectTree.SetNativeProc(objectTree.DatabaseQuery, DreamProcNativeDatabaseQuery.NativeProc_Reset);
         objectTree.SetNativeProc(objectTree.DatabaseQuery, DreamProcNativeDatabaseQuery.NativeProc_RowsAffected);
 
         objectTree.SetNativeProc(objectTree.Generator, DreamProcNativeGenerator.NativeProc_Rand);

@@ -99,6 +99,7 @@ public enum TokenType : byte {
     DM_LeftShiftEquals,
     DM_LessThan,
     DM_LessThanEquals,
+    DM_LessThanEqualsGreaterThan,
     DM_Minus,
     DM_MinusEquals,
     DM_MinusMinus,

@@ -381,6 +381,170 @@ internal static class DreamProcNativeRoot {
         throw new DMCrashRuntime(message ?? string.Empty);
     }
 
+    [DreamProc("_dm_db_new_con")]
+    [DreamProcParameter("filename", Type = DreamValueTypeFlag.String)]
+    public static DreamValue NativeProc__dm_db_new_con(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        var database = bundle.ObjectTree.CreateObject(bundle.ObjectTree.Database);
+        database.InitSpawn(new DreamProcArguments(bundle.Arguments));
+
+        return new DreamValue(database);
+    }
+
+    [DreamProc("_dm_db_connect")]
+    [DreamProcParameter("database", Type = DreamValueTypeFlag.DreamObject)]
+    [DreamProcParameter("filename", Type = DreamValueTypeFlag.String)]
+    public static DreamValue NativeProc__dm_db_connect(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        if (!bundle.GetArgument(0, "database").TryGetValueAsDreamObject<DreamObjectDatabase>(out var database))
+            return DreamValue.False;
+
+        if (!bundle.GetArgument(1, "filename").TryGetValueAsString(out var filename))
+            return DreamValue.False;
+
+        return new DreamValue(database.Open(filename) ? 1 : 0);
+    }
+
+    [DreamProc("_dm_db_close")]
+    [DreamProcParameter("database", Type = DreamValueTypeFlag.DreamObject)]
+    public static DreamValue NativeProc__dm_db_close(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        if (!bundle.GetArgument(0, "database").TryGetValueAsDreamObject<DreamObjectDatabase>(out var database))
+            return DreamValue.False;
+
+        database.Close();
+        return DreamValue.True;
+    }
+
+    [DreamProc("_dm_db_is_connected")]
+    [DreamProcParameter("database", Type = DreamValueTypeFlag.DreamObject)]
+    public static DreamValue NativeProc__dm_db_is_connected(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        if (!bundle.GetArgument(0, "database").TryGetValueAsDreamObject<DreamObjectDatabase>(out var database))
+            return DreamValue.False;
+
+        return new DreamValue(database.IsConnected() ? 1 : 0);
+    }
+
+    [DreamProc("_dm_db_quote")]
+    [DreamProcParameter("value")]
+    public static DreamValue NativeProc__dm_db_quote(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        var value = bundle.GetArgument(0, "value");
+        if (value.IsNull)
+            return new DreamValue("NULL");
+
+        return new DreamValue("'" + value.Stringify().Replace("'", "''") + "'");
+    }
+
+    [DreamProc("_dm_db_new_query")]
+    [DreamProcParameter("text", Type = DreamValueTypeFlag.String)]
+    [DreamProcParameter("item1")]
+    public static DreamValue NativeProc__dm_db_new_query(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        var query = bundle.ObjectTree.CreateObject(bundle.ObjectTree.DatabaseQuery);
+        query.InitSpawn(new DreamProcArguments(bundle.Arguments));
+
+        return new DreamValue(query);
+    }
+
+    [DreamProc("_dm_db_execute")]
+    [DreamProcParameter("query", Type = DreamValueTypeFlag.DreamObject)]
+    [DreamProcParameter("database", Type = DreamValueTypeFlag.DreamObject)]
+    public static DreamValue NativeProc__dm_db_execute(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        if (!bundle.GetArgument(0, "query").TryGetValueAsDreamObject<DreamObjectDatabaseQuery>(out var query))
+            return DreamValue.False;
+
+        if (!bundle.GetArgument(1, "database").TryGetValueAsDreamObject<DreamObjectDatabase>(out var database))
+            return DreamValue.False;
+
+        query.ExecuteCommand(database);
+        return DreamValue.True;
+    }
+
+    [DreamProc("_dm_db_next_row")]
+    [DreamProcParameter("query", Type = DreamValueTypeFlag.DreamObject)]
+    public static DreamValue NativeProc__dm_db_next_row(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        if (!bundle.GetArgument(0, "query").TryGetValueAsDreamObject<DreamObjectDatabaseQuery>(out var query))
+            return DreamValue.False;
+
+        return new DreamValue(query.NextRow() ? 1 : 0);
+    }
+
+    [DreamProc("_dm_db_rows_affected")]
+    [DreamProcParameter("query", Type = DreamValueTypeFlag.DreamObject)]
+    public static DreamValue NativeProc__dm_db_rows_affected(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        if (!bundle.GetArgument(0, "query").TryGetValueAsDreamObject<DreamObjectDatabaseQuery>(out var query))
+            return new DreamValue(0);
+
+        return new DreamValue(query.RowsAffected());
+    }
+
+    [DreamProc("_dm_db_row_count")]
+    [DreamProcParameter("query", Type = DreamValueTypeFlag.DreamObject)]
+    public static DreamValue NativeProc__dm_db_row_count(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        if (!bundle.GetArgument(0, "query").TryGetValueAsDreamObject<DreamObjectDatabaseQuery>(out var query))
+            return new DreamValue(0);
+
+        return new DreamValue(query.RowCount());
+    }
+
+    [DreamProc("_dm_db_error_msg")]
+    [DreamProcParameter("database_or_query", Type = DreamValueTypeFlag.DreamObject)]
+    public static DreamValue NativeProc__dm_db_error_msg(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        var databaseOrQuery = bundle.GetArgument(0, "database_or_query");
+
+        if (databaseOrQuery.TryGetValueAsDreamObject<DreamObjectDatabase>(out var database))
+            return database.GetErrorMessage() is { } databaseMessage ? new DreamValue(databaseMessage) : DreamValue.Null;
+
+        if (databaseOrQuery.TryGetValueAsDreamObject<DreamObjectDatabaseQuery>(out var query))
+            return query.GetErrorMessage() is { } queryMessage ? new DreamValue(queryMessage) : DreamValue.Null;
+
+        return DreamValue.Null;
+    }
+
+    [DreamProc("_dm_db_columns")]
+    [DreamProcParameter("query", Type = DreamValueTypeFlag.DreamObject)]
+    [DreamProcParameter("column", Type = DreamValueTypeFlag.Float)]
+    public static DreamValue NativeProc__dm_db_columns(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        if (!bundle.GetArgument(0, "query").TryGetValueAsDreamObject<DreamObjectDatabaseQuery>(out var query))
+            return DreamValue.Null;
+
+        if (bundle.GetArgument(1, "column").TryGetValueAsInteger(out var column))
+            return query.GetColumn(column);
+
+        var list = bundle.ObjectTree.CreateList();
+        foreach (var value in query.GetAllColumns()) {
+            list.AddValue(value);
+        }
+
+        return new DreamValue(list);
+    }
+
+    [DreamProc("noise_hash")]
+    [DreamProcParameter("arg1")]
+    public static DreamValue NativeProc_noise_hash(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        var numbers = new List<float>();
+
+        foreach (var argument in bundle.Arguments) {
+            if (argument.TryGetValueAsString(out _))
+                continue; // Reserved hash name
+
+            if (argument.TryGetValueAsDreamList(out var list)) {
+                foreach (var listValue in list.EnumerateValues()) {
+                    if (listValue.TryGetValueAsFloat(out var number))
+                        numbers.Add(number);
+                }
+            } else if (argument.TryGetValueAsFloat(out var number)) {
+                numbers.Add(number);
+            }
+        }
+
+        if (numbers.Count == 0)
+            return new DreamValue(0);
+
+        using var sha256 = SHA256.Create();
+        var text = string.Join(";", numbers.Select(number => number.ToString("R", CultureInfo.InvariantCulture)));
+        var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(text));
+        var hashValue = BitConverter.ToUInt64(hash, 0);
+
+        return new DreamValue(hashValue / ((double)ulong.MaxValue + 1d));
+    }
+
     [DreamProc("fcopy")]
     [DreamProcParameter("Src", Type = DreamValueTypeFlag.String | DreamValueTypeFlag.DreamResource)]
     [DreamProcParameter("Dst", Type = DreamValueTypeFlag.String)]
@@ -429,6 +593,12 @@ internal static class DreamProcNativeRoot {
             return DreamValue.Null;
 
         return new DreamValue(bundle.ResourceManager.LoadResource(filePath));
+    }
+
+    [DreamProc("load_resource")]
+    [DreamProcParameter("File", Type = DreamValueTypeFlag.String | DreamValueTypeFlag.DreamResource)]
+    public static DreamValue NativeProc_load_resource(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        return NativeProc_fcopy_rsc(bundle, src, usr);
     }
 
     [DreamProc("fdel")]
@@ -1401,9 +1571,31 @@ internal static class DreamProcNativeRoot {
         if (!valFactor.TryGetValueAsFloatCoerceNull(out var factor))
             throw new Exception($"lerp factor {valFactor} is not a num");
 
-        // TODO: Support non-num arguments like vectors
         if (valA.TryGetValueAsFloatCoerceNull(out var floatA) && valB.TryGetValueAsFloatCoerceNull(out var floatB)) {
             return new DreamValue(floatA + (floatB - floatA) * factor);
+        }
+
+        if (valA.TryGetValueAsDreamObject<DreamObjectVector>(out var vectorA) &&
+            valB.TryGetValueAsDreamObject<DreamObjectVector>(out var vectorB)) {
+            var result = bundle.ObjectTree.CreateObject<DreamObjectVector>(bundle.ObjectTree.Vector);
+            var is3D = vectorA.Is3D || vectorB.Is3D;
+
+            result.Initialize(is3D
+                ? new(new(vectorA.X + (vectorB.X - vectorA.X) * factor),
+                    new(vectorA.Y + (vectorB.Y - vectorA.Y) * factor),
+                    new(vectorA.Z + (vectorB.Z - vectorA.Z) * factor))
+                : new(new(vectorA.X + (vectorB.X - vectorA.X) * factor),
+                    new(vectorA.Y + (vectorB.Y - vectorA.Y) * factor)));
+
+            return new DreamValue(result);
+        }
+
+        if (valA.TryGetValueAsDreamObject<DreamObjectMatrix>(out var matrixA) &&
+            valB.TryGetValueAsDreamObject<DreamObjectMatrix>(out var matrixB)) {
+            var result = DreamObjectMatrix.MatrixClone(bundle.ObjectTree, matrixA);
+            DreamObjectMatrix.InterpolateMatrix(result, matrixB, factor);
+
+            return new DreamValue(result);
         }
 
         // TODO: Change this to a type mismatch runtime once the other valid arg types are supported

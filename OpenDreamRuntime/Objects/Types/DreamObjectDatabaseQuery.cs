@@ -94,7 +94,7 @@ public sealed class DreamObjectDatabaseQuery(DreamObjectDefinition objectDefinit
         }
 
         try {
-            var name = _reader.GetName(id);
+            var name = _reader.GetName(id - 1);
             return new DreamValue(name);
         } catch (IndexOutOfRangeException exception) {
             _errorCode = 1;
@@ -107,6 +107,21 @@ public sealed class DreamObjectDatabaseQuery(DreamObjectDefinition objectDefinit
     public void ClearCommand() {
         _command?.Dispose();
         _command = null;
+    }
+
+    public void ResetReader() {
+        if (_command?.Connection == null) {
+            return;
+        }
+
+        CloseReader();
+
+        try {
+            _reader = _command.ExecuteReader();
+        } catch (SqliteException exception) {
+            _errorCode = exception.SqliteErrorCode;
+            _errorMessage = exception.Message;
+        }
     }
 
     public void CloseReader() {
@@ -138,6 +153,7 @@ public sealed class DreamObjectDatabaseQuery(DreamObjectDefinition objectDefinit
         _command.Connection = connection;
 
         try {
+            CloseReader();
             _reader = _command.ExecuteReader();
         } catch (SqliteException exception) {
             _errorCode = exception.SqliteErrorCode;
@@ -146,8 +162,8 @@ public sealed class DreamObjectDatabaseQuery(DreamObjectDefinition objectDefinit
         }
     }
 
-    public void NextRow() {
-        _reader?.Read();
+    public bool NextRow() {
+        return _reader?.Read() == true;
     }
 
     /// <summary>
@@ -163,7 +179,25 @@ public sealed class DreamObjectDatabaseQuery(DreamObjectDefinition objectDefinit
         }
 
         try {
-            value = GetDreamValueFromDbObject(_reader.GetValue(column));
+            value = GetDreamValueFromDbObject(_reader.GetValue(column - 1));
+            return true;
+        } catch (Exception exception) {
+            _errorCode = 1;
+            _errorMessage = exception.Message;
+        }
+
+        value = DreamValue.Null;
+        return false;
+    }
+
+    public bool TryGetColumn(string column, out DreamValue value) {
+        if (_reader is null) {
+            value = DreamValue.Null;
+            return false;
+        }
+
+        try {
+            value = GetDreamValueFromDbObject(_reader[column]);
             return true;
         } catch (Exception exception) {
             _errorCode = 1;
@@ -198,6 +232,10 @@ public sealed class DreamObjectDatabaseQuery(DreamObjectDefinition objectDefinit
 
     public int RowsAffected() {
         return _reader?.RecordsAffected ?? 0;
+    }
+
+    public int RowCount() {
+        return 0;
     }
 
     /// <summary>

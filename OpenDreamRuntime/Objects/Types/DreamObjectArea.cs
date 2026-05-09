@@ -33,7 +33,7 @@ public sealed class DreamObjectArea : DreamObjectAtom {
     private int? _cachedX, _cachedY, _cachedZ;
 
     public DreamObjectArea(DreamObjectDefinition objectDefinition) : base(objectDefinition) {
-        Appearance = AppearanceSystem!.DefaultAppearance;
+        Appearance = AppearanceSystem?.DefaultAppearance ?? new ImmutableAppearance(MutableAppearance.Default, null);
         Turfs = new();
         _contents = new(ObjectTree.List.ObjectDefinition, this);
         AtomManager.SetAtomAppearance(this, AtomManager.GetAppearanceFromDefinition(ObjectDefinition));

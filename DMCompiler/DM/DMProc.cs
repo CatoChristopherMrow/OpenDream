@@ -1100,6 +1100,10 @@ internal sealed class DMProc {
         WriteOpcode(DreamProcOpcode.CompareLessThanOrEqual);
     }
 
+    public void Compare() {
+        WriteOpcode(DreamProcOpcode.Compare);
+    }
+
     public void Sin() {
         WriteOpcode(DreamProcOpcode.Sin);
     }

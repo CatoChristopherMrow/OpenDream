@@ -264,6 +264,11 @@ internal class DMExpressionBuilder(ExpressionContext ctx, DMExpressionBuilder.Sc
                     BuildExpression(lessThanOrEqual.LHS, inferredPath),
                     BuildExpression(lessThanOrEqual.RHS, inferredPath));
                 break;
+            case DMASTCompare compare:
+                result = new Compare(compare.Location,
+                    BuildExpression(compare.LHS, inferredPath),
+                    BuildExpression(compare.RHS, inferredPath));
+                break;
             case DMASTOr or:
                 result = new Or(or.Location,
                     BuildExpression(or.LHS, inferredPath),

@@ -108,7 +108,7 @@ public sealed partial class AtomManager {
         var entity = _entityManager.SpawnEntity(null, new MapCoordinates(0, 0, MapId.Nullspace));
 
         DMISpriteComponent sprite = _entityManager.AddComponent<DMISpriteComponent>(entity);
-        DMISpriteSystem?.SetSpriteAppearance(new(entity, sprite), GetAppearanceFromDefinition(movable.ObjectDefinition));
+        SetSpriteAppearance(new(entity, sprite), GetAppearanceFromDefinition(movable.ObjectDefinition));
 
         _entityToAtom.Add(entity, movable);
         return entity;
@@ -286,6 +286,8 @@ public sealed partial class AtomManager {
 
                         if (!verb.VerbId.HasValue)
                             VerbSystem?.RegisterVerb(verb);
+                        if (!verb.VerbId.HasValue)
+                            continue;
                         if (appearance.Verbs.Contains(verb.VerbId!.Value))
                             continue;
 
@@ -294,6 +296,8 @@ public sealed partial class AtomManager {
                 } else if (value.TryGetValueAsProc(out var verb)) {
                     if (!verb.VerbId.HasValue)
                         VerbSystem?.RegisterVerb(verb);
+                    if (!verb.VerbId.HasValue)
+                        break;
 
                     appearance.Verbs.Add(verb.VerbId!.Value);
                 }
@@ -450,6 +454,16 @@ public sealed partial class AtomManager {
             case "appearance":
                 MutableAppearance appearanceCopy = appearance.ToMutable(); // Return a copy
                 return new(appearanceCopy);
+            case "verbs": {
+                var verbs = _objectTree.CreateList(appearance.Verbs.Length);
+                if (VerbSystem != null) {
+                    foreach (var verbId in appearance.Verbs) {
+                        verbs.AddValue(new(VerbSystem.GetVerb(verbId)));
+                    }
+                }
+
+                return new(verbs);
+            }
 
             // These should be handled by an atom if referenced through one
             case "overlays":
@@ -516,7 +530,7 @@ public sealed partial class AtomManager {
             if(image.IsMutableAppearance)
                 image.MutableAppearance = MutableAppearance.GetCopy(appearance); //this needs to be a copy
             else
-                DMISpriteSystem?.SetSpriteAppearance(new(image.Entity, image.SpriteComponent!), appearance);
+                SetSpriteAppearance(new(image.Entity, image.SpriteComponent!), appearance);
             return;
         }
 
@@ -525,7 +539,7 @@ public sealed partial class AtomManager {
         if (atom is DreamObjectTurf turf) {
             _dreamMapManager.SetTurfAppearance(turf, appearance);
         } else if (atom is DreamObjectMovable movable) {
-            DMISpriteSystem?.SetSpriteAppearance(new(movable.Entity, movable.SpriteComponent), appearance);
+            SetSpriteAppearance(new(movable.Entity, movable.SpriteComponent), appearance);
         } else if (atom is DreamObjectArea area) {
             _dreamMapManager.SetAreaAppearance(area, appearance);
         }
@@ -536,7 +550,11 @@ public sealed partial class AtomManager {
     }
 
     public void SetSpriteAppearance(Entity<DMISpriteComponent> ent, MutableAppearance appearance) {
-        DMISpriteSystem?.SetSpriteAppearance(ent, appearance);
+        if (DMISpriteSystem != null) {
+            DMISpriteSystem.SetSpriteAppearance(ent, appearance);
+        } else {
+            Rendering.DMISpriteSystem.SetSpriteAppearance(ent, new ImmutableAppearance(appearance, null));
+        }
     }
 
     public void AnimateAppearance(DreamObject atom, TimeSpan duration, AnimationEasing easing, int loop, AnimationFlags flags, int delay, bool chainAnim, Action<MutableAppearance> animate) {

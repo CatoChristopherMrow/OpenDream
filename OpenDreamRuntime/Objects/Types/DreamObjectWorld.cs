@@ -67,7 +67,7 @@ public sealed partial class DreamObjectWorld : DreamObject {
     private DreamValue _params;
 
     /// <summary> Tries to return the address of the server, as it appears over the internet. May return null.</summary>
-    private IPAddress? InternetAddress => null; //TODO: Implement this!
+    private IPAddress InternetAddress => DisplayIPv6 ? IPAddress.IPv6Loopback : IPAddress.Loopback;
 
     public DreamObjectWorld(DreamObjectDefinition objectDefinition) : base(objectDefinition) {
         IoCManager.InjectDependencies(this);
@@ -127,10 +127,9 @@ public sealed partial class DreamObjectWorld : DreamObject {
                 value = _params;
                 return true;
 
-            case "status":
             case "name":
-                value = new(string.Empty); // TODO
-                return true;
+            case "status":
+                return base.TryGetVar(varName, out value);
 
             case "contents":
                 value = new(new WorldContentsList(ObjectTree.List.ObjectDefinition, AtomManager));
@@ -203,22 +202,12 @@ public sealed partial class DreamObjectWorld : DreamObject {
                 return true;
 
             case "url":
-                if (InternetAddress == null)
-                    value = DreamValue.Null;
-                else
-                    value = new(InternetAddress + ":" + _netManager.Port); // RIP "opendream://"
+                value = new(InternetAddress + ":" + _netManager.Port); // RIP "opendream://"
 
                 return true;
 
             case "internet_address":
-                IPAddress? address = InternetAddress;
-                // We don't need to do any logic with DisplayIPv6 since whatever this address is,
-                // ought to be the address that the boolean's getter is searching for anyways.
-                if (address == null)
-                    value = DreamValue.Null;
-                else
-                    value = new(address.ToString());
-
+                value = new(InternetAddress.ToString());
                 return true;
 
             case "system_type":
@@ -259,8 +248,12 @@ public sealed partial class DreamObjectWorld : DreamObject {
             case "game_state":
             case "hub":
             case "hub_password":
+            case "loop_checks":
+            case "map_format":
             case "mob":
+            case "movement_mode":
             case "name":
+            case "reachable":
             case "status":
             case "version":
             case "visibility":

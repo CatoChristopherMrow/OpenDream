@@ -21,9 +21,13 @@ public sealed partial class DMISpriteSystem : EntitySystem {
 
     public void SetSpriteAppearance(Entity<DMISpriteComponent> ent, MutableAppearance appearance, bool dirty = true) {
         DMISpriteComponent component = ent.Comp;
-        component.Appearance = new ImmutableAppearance(appearance, _appearance);
+        SetSpriteAppearance(ent, new ImmutableAppearance(appearance, _appearance));
         if(dirty)
             Dirty(ent, component);
+    }
+
+    public static void SetSpriteAppearance(Entity<DMISpriteComponent> ent, ImmutableAppearance appearance) {
+        ent.Comp.Appearance = appearance;
     }
 
     public void SetSpriteScreenLocation(Entity<DMISpriteComponent> ent, ScreenLocation screenLocation) {

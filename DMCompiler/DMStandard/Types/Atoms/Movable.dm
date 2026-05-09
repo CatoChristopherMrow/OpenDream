@@ -1,17 +1,17 @@
 ﻿/atom/movable
 	var/screen_loc
 
-	var/animate_movement = FORWARD_STEPS as opendream_unimplemented
-	var/list/locs = null as opendream_unimplemented
+	var/animate_movement = FORWARD_STEPS
+	var/list/locs = null
 	var/glide_size = 0
-	var/step_size as opendream_unimplemented
-	var/tmp/bound_x as opendream_unimplemented
-	var/tmp/bound_y as opendream_unimplemented
-	var/tmp/bound_width as opendream_unimplemented
-	var/tmp/bound_height as opendream_unimplemented
+	var/step_size
+	var/tmp/bound_x
+	var/tmp/bound_y
+	var/tmp/bound_width
+	var/tmp/bound_height
 
 	//Undocumented var. "[x],[y]" or "[x],[y] to [x2],[y2]" based on bound_* vars
-	var/bounds as opendream_unimplemented
+	var/bounds
 
 	var/particles/particles 
 
