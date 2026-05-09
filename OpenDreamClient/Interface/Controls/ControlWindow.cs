@@ -50,7 +50,7 @@ public sealed partial class ControlWindow : InterfaceControl {
             _menuContainer.Visible = false;
         }
 
-        if(!WindowDescriptor.IsPane.Value)
+        if (!WindowDescriptor.IsPane.Value && (!WindowDescriptor.IsDefault.Value || _myWindow.clydeWindow != null || _myWindow.osWindow != null))
             UpdateWindowAttributes(_myWindow);
 
         if (WindowDescriptor.IsDefault.Value) {
@@ -66,7 +66,7 @@ public sealed partial class ControlWindow : InterfaceControl {
             _myWindow.osWindow.Close();
     }
 
-    public OSWindow CreateWindow() {
+    public OSWindow CreateWindow(IClydeWindow? owner = null, WindowStartupLocation? startupLocation = null, bool useMainWindowOwner = true) {
         if(_myWindow.osWindow is not null)
             return _myWindow.osWindow;
 
@@ -85,6 +85,8 @@ public sealed partial class ControlWindow : InterfaceControl {
             window.SetHeight = ControlDescriptor.Size.Y;
 
         window.Closing += _ => {
+            _sawmill.Info($"OS window closing for {Id.Value} default={WindowDescriptor.IsDefault.Value} pane={WindowDescriptor.IsPane.Value}");
+
             // A window can have a command set to be run when it's closed
             if (!string.IsNullOrWhiteSpace(WindowDescriptor.OnClose.Value)) {
                 InterfaceManager.RunCommand(WindowDescriptor.OnClose.Value);
@@ -92,8 +94,8 @@ public sealed partial class ControlWindow : InterfaceControl {
 
             _myWindow = (null, _myWindow.clydeWindow);
         };
-        window.StartupLocation = WindowStartupLocation.CenterOwner;
-        window.Owner = _clyde.MainWindow;
+        window.StartupLocation = startupLocation ?? WindowStartupLocation.CenterOwner;
+        window.Owner = useMainWindowOwner ? owner ?? _clyde.MainWindow : owner;
 
         _myWindow = (window, _myWindow.clydeWindow);
         window.Create();
@@ -177,6 +179,18 @@ public sealed partial class ControlWindow : InterfaceControl {
         }
 
         UpdateAnchors();
+    }
+
+    public override void Output(string value, string? data) {
+        if (data == null)
+            return;
+
+        foreach (var child in ChildControls) {
+            if (child is ControlBrowser browser) {
+                browser.Output(value, data);
+                return;
+            }
+        }
     }
 
     private void UpdateWindowAttributes((OSWindow? osWindow, IClydeWindow? clydeWindow) windowRoot) {

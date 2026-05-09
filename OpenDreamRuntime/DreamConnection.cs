@@ -36,6 +36,7 @@ public sealed partial class DreamConnection {
     [ViewVariables] public TimeSpan? LastClickTime { get; set; }
 
     [ViewVariables] public ICommonSession? Session { get; private set; }
+
     [ViewVariables] public DreamObjectClient? Client { get; private set; }
     [ViewVariables] public string Key { get; }
 

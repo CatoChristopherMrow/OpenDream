@@ -1,23 +1,24 @@
-﻿using OpenDreamClient.Interface.Controls;
+using OpenDreamClient.Interface.Controls;
 using OpenDreamShared.Interface.Descriptors;
 using OpenDreamShared.Interface.DMF;
-using Robust.Client.Graphics;
+using Robust.Client.UserInterface;
 using Robust.Client.UserInterface.Controls;
+using Robust.Client.UserInterface.CustomControls;
+using Robust.Shared.Maths;
+using System.Numerics;
 
 namespace OpenDreamClient.Interface;
 
-internal sealed class BrowsePopup {
+internal sealed partial class BrowsePopup {
     public event Action? Closed;
 
     public readonly ControlBrowser Browser;
     public readonly ControlWindow WindowElement;
 
-    private readonly OSWindow _window;
+    private readonly ChromelessBrowseWindow _window;
+    private bool _closed;
 
-    public BrowsePopup(
-        string name,
-        Vector2i size,
-        IClydeWindow ownerWindow) {
+    public BrowsePopup(string name, Vector2i size) {
         WindowDescriptor popupWindowDescriptor = new WindowDescriptor(name,
             new() {
                 new ControlDescriptorBrowser {
@@ -27,30 +28,130 @@ internal sealed class BrowsePopup {
                     Anchor2 = new DMFPropertyPos(100, 100)
                 }
             }) {
-                Size = new DMFPropertySize(size)
+                Size = new DMFPropertySize(size),
+                IsPane = new DMFPropertyBool(true)
             };
 
         WindowElement = new ControlWindow(popupWindowDescriptor);
         WindowElement.CreateChildControls();
 
-        _window = WindowElement.CreateWindow();
-        _window.StartupLocation = WindowStartupLocation.CenterOwner;
-        _window.Owner = ownerWindow;
-        _window.Closed += OnWindowClosed;
+        _window = new ChromelessBrowseWindow(name, size, WindowElement.UIElement);
+        _window.OnClose += OnWindowClosed;
 
         Browser = (ControlBrowser)WindowElement.ChildControls[0];
     }
 
     public void Open() {
-        _window.Show();
-        // _window.Focus();
+        _window.OpenHiddenCentered();
+        UpdateBrowserGeometry();
     }
 
     public void Close() {
         _window.Close();
     }
 
+    public void SetProperty(string property, string value) {
+        switch (property) {
+            case "pos":
+                SetPosition(new DMFPropertyPos(value).Vector);
+                break;
+            case "size":
+                SetSize(new DMFPropertySize(value).Vector);
+                break;
+            case "is-visible":
+                SetVisible(new DMFPropertyBool(value).Value);
+                break;
+            case "can-resize":
+                _window.Resizable = new DMFPropertyBool(value).Value;
+                break;
+            case "can-close":
+            case "titlebar":
+                // TGUI owns the visible chrome for browse popups.
+                break;
+            default:
+                WindowElement.SetProperty(property, value, manualWinset: true);
+                break;
+        }
+    }
+
+    public bool TryGetProperty(string property, out IDMFProperty? value) {
+        switch (property) {
+            case "pos":
+                value = new DMFPropertyPos(_window.Position);
+                return true;
+            case "size":
+            case "inner-size":
+            case "outer-size":
+                value = new DMFPropertySize(_window.Size);
+                return true;
+            case "is-visible":
+                value = new DMFPropertyBool(_window.Visible && _window.IsOpen);
+                return true;
+            case "can-resize":
+                value = new DMFPropertyBool(_window.Resizable);
+                return true;
+            case "can-close":
+                value = new DMFPropertyBool(true);
+                return true;
+            default:
+                return WindowElement.TryGetProperty(property, out value);
+        }
+    }
+
+    private void SetPosition(Vector2i position) {
+        LayoutContainer.SetPosition(_window, position);
+        UpdateBrowserGeometry();
+    }
+
+    private void SetSize(Vector2i size) {
+        _window.SetSize = size;
+        WindowElement.UIElement.SetSize = size;
+        UpdateBrowserGeometry();
+    }
+
+    private void SetVisible(bool visible) {
+        _window.Visible = visible;
+        if (visible && !_window.IsOpen)
+            _window.OpenCentered();
+
+        UpdateBrowserGeometry();
+    }
+
+    private void UpdateBrowserGeometry() {
+        Browser.SetGeometryOrigin(new Vector2i((int)_window.Position.X, (int)_window.Position.Y));
+    }
+
     private void OnWindowClosed() {
+        if (_closed)
+            return;
+
+        _closed = true;
+        Browser.ShutdownBrowser();
         Closed?.Invoke();
+    }
+
+    private sealed class ChromelessBrowseWindow : BaseWindow {
+        public ChromelessBrowseWindow(string name, Vector2i size, Control contents) {
+            Name = name;
+            SetSize = size;
+            MinSize = new Vector2(160, 120);
+            MouseFilter = MouseFilterMode.Stop;
+            Resizable = true;
+            AddChild(contents);
+        }
+
+        public void OpenHiddenCentered() {
+            Measure(Vector2Helpers.Infinity);
+
+            if (!IsOpen)
+                UserInterfaceManager.WindowRoot.AddChild(this);
+
+            RecenterWindow(new Vector2(0.5f, 0.5f));
+            Visible = false;
+        }
+
+        protected override DragMode GetDragModeFor(Vector2 relativeMousePos) {
+            return DragMode.None;
+        }
     }
 }
