@@ -10,6 +10,18 @@ namespace OpenDreamRuntime.Procs.Native {
         [DreamProcParameter("start", Type = DreamValue.DreamValueTypeFlag.Float | DreamValue.DreamValueTypeFlag.DreamObject)] // BYOND docs say these are uppercase, they're not
         [DreamProcParameter("end", DefaultValue = 0, Type = DreamValue.DreamValueTypeFlag.Float)]
         public static DreamValue NativeProc_Find(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+            return NativeProc_FindImpl(bundle, src);
+        }
+
+        [DreamProc("Find_char")]
+        [DreamProcParameter("haystack", Type = DreamValue.DreamValueTypeFlag.String)]
+        [DreamProcParameter("start", Type = DreamValue.DreamValueTypeFlag.Float | DreamValue.DreamValueTypeFlag.DreamObject)]
+        [DreamProcParameter("end", DefaultValue = 0, Type = DreamValue.DreamValueTypeFlag.Float)]
+        public static DreamValue NativeProc_FindChar(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+            return NativeProc_FindImpl(bundle, src);
+        }
+
+        private static DreamValue NativeProc_FindImpl(NativeProc.Bundle bundle, DreamObject? src) {
             DreamObjectRegex dreamRegex = (DreamObjectRegex)src!;
             DreamValue haystack = bundle.GetArgument(0, "haystack");
 
@@ -112,6 +124,19 @@ namespace OpenDreamRuntime.Procs.Native {
         [DreamProcParameter("start", DefaultValue = 1, Type = DreamValue.DreamValueTypeFlag.Float)] // BYOND docs say these are uppercase, they're not
         [DreamProcParameter("end", DefaultValue = 0, Type = DreamValue.DreamValueTypeFlag.Float)]
         public static DreamValue NativeProc_Replace(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+            return NativeProc_ReplaceImpl(bundle, src);
+        }
+
+        [DreamProc("Replace_char")]
+        [DreamProcParameter("haystack", Type = DreamValue.DreamValueTypeFlag.String)]
+        [DreamProcParameter("replacement", Type = DreamValue.DreamValueTypeFlag.String | DreamValue.DreamValueTypeFlag.DreamProc)]
+        [DreamProcParameter("start", DefaultValue = 1, Type = DreamValue.DreamValueTypeFlag.Float)]
+        [DreamProcParameter("end", DefaultValue = 0, Type = DreamValue.DreamValueTypeFlag.Float)]
+        public static DreamValue NativeProc_ReplaceChar(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+            return NativeProc_ReplaceImpl(bundle, src);
+        }
+
+        private static DreamValue NativeProc_ReplaceImpl(NativeProc.Bundle bundle, DreamObject? src) {
             DreamValue haystack = bundle.GetArgument(0, "haystack");
             DreamValue replacement = bundle.GetArgument(1, "replacement");
             int start = bundle.GetArgument(2, "start").GetValueAsInteger();

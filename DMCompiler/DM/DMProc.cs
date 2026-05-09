@@ -409,8 +409,6 @@ internal sealed class DMProc {
                     Attributes |= ProcAttributes.Instant;
                 else
                     Attributes &= ~ProcAttributes.Instant;
-
-                _compiler.UnimplementedWarning(statementSet.Location, "set instant is not implemented");
                 break;
             case "background":
                 if (constant.IsTruthy())

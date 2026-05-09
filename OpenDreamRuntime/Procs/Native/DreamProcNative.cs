@@ -137,6 +137,8 @@ internal static class DreamProcNative {
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_winset);
 
         objectTree.SetNativeProc(objectTree.Client, DreamProcNativeClient.NativeProc_SoundQuery);
+        objectTree.SetNativeProc(objectTree.Client, DreamProcNativeClient.NativeProc_Export);
+        objectTree.SetNativeProc(objectTree.Client, DreamProcNativeClient.NativeProc_MeasureText);
 
         objectTree.SetNativeProc(objectTree.List, DreamProcNativeList.NativeProc_Add);
         objectTree.SetNativeProc(objectTree.List, DreamProcNativeList.NativeProc_Copy);
@@ -169,13 +171,23 @@ internal static class DreamProcNative {
         objectTree.SetNativeProc(objectTree.Matrix, DreamProcNativeMatrix.NativeProc_Turn);
 
         objectTree.SetNativeProc(objectTree.Regex, DreamProcNativeRegex.NativeProc_Find);
+        objectTree.SetNativeProc(objectTree.Regex, DreamProcNativeRegex.NativeProc_FindChar);
         objectTree.SetNativeProc(objectTree.Regex, DreamProcNativeRegex.NativeProc_Replace);
+        objectTree.SetNativeProc(objectTree.Regex, DreamProcNativeRegex.NativeProc_ReplaceChar);
 
         objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_Width);
         objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_Height);
         objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_Insert);
         objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_Blend);
         objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_Scale);
+        objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_Crop);
+        objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_DrawBox);
+        objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_Flip);
+        objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_GetPixel);
+        objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_SetIntensity);
+        objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_MapColors);
+        objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_Shift);
+        objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_SwapColor);
         objectTree.SetNativeProc(objectTree.Icon, DreamProcNativeIcon.NativeProc_Turn);
 
         objectTree.SetNativeProc(objectTree.Savefile, DreamProcNativeSavefile.NativeProc_ExportText);

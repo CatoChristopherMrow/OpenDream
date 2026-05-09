@@ -86,14 +86,12 @@
 	proc/Import(Query)
 		set opendream_unimplemented = TRUE
 	proc/Export(file)
-		set opendream_unimplemented = TRUE
 	proc/AllowUpload(filename, filelength)
 		set opendream_unimplemented = TRUE
 		return TRUE
 
 	proc/SoundQuery()
 	proc/MeasureText(text, style, width=0)
-		set opendream_unimplemented = TRUE
 
 	proc/Move(loc, dir)
 		mob.Move(loc, dir)
