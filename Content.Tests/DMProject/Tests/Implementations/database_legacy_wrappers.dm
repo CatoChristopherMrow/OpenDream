@@ -14,8 +14,8 @@
 	query = _dm_db_new_query("SELECT id, name FROM test ORDER BY id")
 	ASSERT(_dm_db_execute(query, db, null, null, null))
 	ASSERT(_dm_db_next_row(query, null, null))
-	ASSERT(query.GetColumn(1) == 1)
-	ASSERT(query.GetColumn(2) == "one")
+	ASSERT(query.GetColumn(0) == 1)
+	ASSERT(query.GetColumn(1) == "one")
 	ASSERT(!_dm_db_next_row(query, null, null))
 
 	var/list/columns = _dm_db_columns(query, null)

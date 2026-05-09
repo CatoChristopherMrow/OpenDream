@@ -94,7 +94,7 @@ public sealed class DreamObjectDatabaseQuery(DreamObjectDefinition objectDefinit
         }
 
         try {
-            var name = _reader.GetName(id - 1);
+            var name = _reader.GetName(id);
             return new DreamValue(name);
         } catch (IndexOutOfRangeException exception) {
             _errorCode = 1;
@@ -179,7 +179,7 @@ public sealed class DreamObjectDatabaseQuery(DreamObjectDefinition objectDefinit
         }
 
         try {
-            value = GetDreamValueFromDbObject(_reader.GetValue(column - 1));
+            value = GetDreamValueFromDbObject(_reader.GetValue(column));
             return true;
         } catch (Exception exception) {
             _errorCode = 1;

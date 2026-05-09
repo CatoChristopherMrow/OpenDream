@@ -152,6 +152,7 @@ public sealed class DreamObjectVector(DreamObjectDefinition definition) : DreamO
         } else if (b.TryGetValueAsDreamObject<DreamObjectVector>(out var right)) {
             X *= right.X;
             Y *= right.Y;
+            Is3D = Is3D || right.Is3D;
             Z *= right.Z;
             IncRef();
             return new DreamValue(this);
@@ -201,6 +202,7 @@ public sealed class DreamObjectVector(DreamObjectDefinition definition) : DreamO
                 throw new DivideByZeroException("Cannot divide vector by zero vector component");
             X /= right.X;
             Y /= right.Y;
+            Is3D = Is3D || right.Is3D;
             Z = right.Z == 0 ? 0 : Z / right.Z;
             IncRef();
             return new DreamValue(this);
@@ -213,8 +215,8 @@ public sealed class DreamObjectVector(DreamObjectDefinition definition) : DreamO
         if (b.TryGetValueAsDreamObject<DreamObjectVector>(out var right)) {
             X += right.X;
             Y += right.Y;
-            Z += right.Z;
             Is3D = Is3D || right.Is3D;
+            Z += right.Z;
 
             IncRef();
             return new DreamValue(this);
@@ -227,8 +229,8 @@ public sealed class DreamObjectVector(DreamObjectDefinition definition) : DreamO
         if (b.TryGetValueAsDreamObject<DreamObjectVector>(out var right)) {
             X -= right.X;
             Y -= right.Y;
-            Z -= right.Z;
             Is3D = Is3D || right.Is3D;
+            Z -= right.Z;
 
             IncRef();
             return new DreamValue(this);

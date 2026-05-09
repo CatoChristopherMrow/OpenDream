@@ -87,6 +87,8 @@ public sealed partial class DummyDreamMapManager : IDreamMapManager {
     }
 
     public void SetZLevels(int levels) {
+        levels = int.Max(levels, 0);
+
         if (levels > Levels) {
             for (var z = Levels + 1; z <= levels; z++) {
                 _levels.Add(new IDreamMapManager.Level(z, default, _objectTree.Turf.ObjectDefinition, DefaultArea, Size));

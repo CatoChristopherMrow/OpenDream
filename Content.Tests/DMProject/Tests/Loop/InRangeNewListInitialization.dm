@@ -1,3 +1,4 @@
+// NOBYOND - relies on OpenDream accepting direct Initialize() calls with arguments
 /datum/gas_holder
 	var/volume = 0
 

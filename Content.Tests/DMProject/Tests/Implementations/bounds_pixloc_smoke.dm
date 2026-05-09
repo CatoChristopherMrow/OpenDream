@@ -64,8 +64,8 @@
 	ASSERT(east.x == 36)
 	ASSERT(east.y == 22)
 	ASSERT(east.z == O.z)
-	ASSERT(east.loc == center)
-	ASSERT(east.step_x == 35)
+	ASSERT(east.loc == locate(2, 1, 1))
+	ASSERT(east.step_x == 3)
 	ASSERT(east.step_y == 21)
 
 	var/pixloc/west = bound_pixloc(O, WEST)
@@ -77,8 +77,9 @@
 	var/pixloc/north = bound_pixloc(O, NORTH)
 	ASSERT(north.x == 20)
 	ASSERT(north.y == 38)
+	ASSERT(north.loc == locate(1, 2, 1))
 	ASSERT(north.step_x == 19)
-	ASSERT(north.step_y == 37)
+	ASSERT(north.step_y == 5)
 
 	var/pixloc/south = bound_pixloc(O, SOUTH)
 	ASSERT(south.x == 20)

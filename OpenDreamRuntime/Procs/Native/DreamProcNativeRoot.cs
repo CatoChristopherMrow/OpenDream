@@ -101,18 +101,10 @@ internal static class DreamProcNativeRoot {
         int endY = Math.Max(y1, y2);
         int endZ = Math.Max(z1, z2);
 
-        if (endX < 1 || startX > mapManager.Size.X ||
-            endY < 1 || startY > mapManager.Size.Y ||
-            endZ < 1 || startZ > mapManager.Levels) {
+        if (startX < 1 || startY < 1 || startZ < 1 ||
+            endX > mapManager.Size.X || endY > mapManager.Size.Y || endZ > mapManager.Levels) {
             return objectTree.CreateList();
         }
-
-        startX = Math.Max(startX, 1);
-        startY = Math.Max(startY, 1);
-        startZ = Math.Max(startZ, 1);
-        endX = Math.Min(endX, mapManager.Size.X);
-        endY = Math.Min(endY, mapManager.Size.Y);
-        endZ = Math.Min(endZ, mapManager.Levels);
 
         DreamList turfs = objectTree.CreateList((endX - startX + 1) * (endY - startY + 1) * (endZ - startZ + 1));
 
@@ -505,7 +497,7 @@ internal static class DreamProcNativeRoot {
             return DreamValue.Null;
 
         if (bundle.GetArgument(1, "column").TryGetValueAsInteger(out var column))
-            return query.GetColumn(column);
+            return query.GetColumn(column - 1);
 
         var list = bundle.ObjectTree.CreateList();
         foreach (var value in query.GetAllColumns()) {

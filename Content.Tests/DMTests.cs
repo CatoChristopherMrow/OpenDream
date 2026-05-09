@@ -7,7 +7,9 @@ using DMCompiler.Compiler;
 using NUnit.Framework;
 using OpenDreamRuntime;
 using OpenDreamRuntime.Objects;
+using OpenDreamShared;
 using Robust.Shared.Asynchronous;
+using Robust.Shared.Configuration;
 using Robust.Shared.IoC;
 using Robust.Shared.Log;
 using Robust.Shared.Timing;
@@ -24,6 +26,7 @@ public sealed partial class DMTests : ContentUnitTest {
     [Dependency] private DreamManager _dreamMan = default!;
     [Dependency] private DreamObjectTree _objectTree = default!;
     [Dependency] private ITaskManager _taskManager = default!;
+    [Dependency] private IConfigurationManager _configManager = default!;
 
     [Flags]
     public enum DMTestFlags {
@@ -42,6 +45,7 @@ public sealed partial class DMTests : ContentUnitTest {
         var dmCompiler = new DMCompiler.DMCompiler();
         IoCManager.InjectDependencies(this);
         _taskManager.Initialize();
+        _configManager.SetCVar(OpenDreamCVars.TopicPort, (ushort)0, force: true);
         Compile(dmCompiler, InitializeEnvironment);
         _dreamMan.PreInitialize(Path.ChangeExtension(InitializeEnvironment, "json"));
         _dreamMan.OnException += OnException;

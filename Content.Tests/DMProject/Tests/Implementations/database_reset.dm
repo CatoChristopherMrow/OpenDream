@@ -11,15 +11,15 @@
 	query.Add("SELECT * FROM test ORDER BY id")
 	query.Execute(db)
 	query.NextRow()
-	ASSERT(query.GetColumn(1) == 1)
+	ASSERT(query.GetColumn(0) == 1)
 
 	query.NextRow()
-	ASSERT(query.GetColumn(1) == 2)
+	ASSERT(query.GetColumn(0) == 2)
 
 	query.Reset()
 	query.NextRow()
-	ASSERT(query.GetColumn(1) == 1)
-	ASSERT(query.GetColumn(2) == "one")
+	ASSERT(query.GetColumn(0) == 1)
+	ASSERT(query.GetColumn(1) == "one")
 
 	del(query)
 	del(db)

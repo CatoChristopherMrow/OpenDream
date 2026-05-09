@@ -343,6 +343,8 @@ public sealed partial class DreamMapManager : IDreamMapManager {
     }
 
     public void SetZLevels(int levels) {
+        levels = Math.Max(levels, 0);
+
         if (levels > Levels) {
             var defaultTurfDef = _objectTree.GetTreeEntry(_defaultTurf.Type).ObjectDefinition;
 

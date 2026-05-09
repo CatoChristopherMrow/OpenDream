@@ -20,8 +20,8 @@
 	ASSERT(select.GetColumn("name") == "one")
 
 	ASSERT(_dm_db_next_row(select, null, null))
-	ASSERT(select.GetColumn(1) == 2)
-	ASSERT(select.GetColumn(2) == "two")
+	ASSERT(select.GetColumn(0) == 2)
+	ASSERT(select.GetColumn(1) == "two")
 	ASSERT(!_dm_db_next_row(select, null, null))
 
 	var/list/columns = _dm_db_columns(select, null)

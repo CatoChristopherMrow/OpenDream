@@ -77,7 +77,7 @@ internal sealed class BrowsePopup {
     public bool TryGetProperty(string property, out IDMFProperty? value) {
         switch (property) {
             case "pos":
-                value = new DMFPropertyPos(_window.Position);
+                value = new DMFPropertyPos(_window.GlobalPixelPosition);
                 return true;
             case "size":
             case "inner-size":
@@ -99,7 +99,7 @@ internal sealed class BrowsePopup {
     }
 
     private void SetPosition(Vector2i position) {
-        LayoutContainer.SetPosition(_window, position);
+        LayoutContainer.SetPosition(_window, PixelToParentUiPosition(position));
         UpdateBrowserGeometry();
     }
 
@@ -118,7 +118,15 @@ internal sealed class BrowsePopup {
     }
 
     private void UpdateBrowserGeometry() {
-        Browser.SetGeometryOrigin(new Vector2i((int)_window.Position.X, (int)_window.Position.Y));
+        Browser.SetGeometryOrigin(_window.GlobalPixelPosition);
+    }
+
+    private Vector2 PixelToParentUiPosition(Vector2i pixelPosition) {
+        var parentPixelPosition = _window.Parent?.GlobalPixelPosition ?? Vector2i.Zero;
+        var relativePixelPosition = pixelPosition - parentPixelPosition;
+        var uiScale = _window.UIScale;
+
+        return new Vector2(relativePixelPosition.X / uiScale, relativePixelPosition.Y / uiScale);
     }
 
     private void OnWindowClosed() {

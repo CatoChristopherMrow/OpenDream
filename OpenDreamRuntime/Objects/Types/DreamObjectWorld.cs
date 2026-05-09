@@ -219,7 +219,7 @@ public sealed partial class DreamObjectWorld : DreamObject {
                 if (Environment.OSVersion.Platform is PlatformID.Unix or PlatformID.MacOSX or PlatformID.Other)
                     value = new DreamValue("UNIX");
                 else
-                    value = new DreamValue("MS_WINDOWS"); //Windows
+                    value = new DreamValue("MS Windows"); //Windows
 
                 return true;
 
