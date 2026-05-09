@@ -85,8 +85,6 @@ public sealed partial class ControlWindow : InterfaceControl {
             window.SetHeight = ControlDescriptor.Size.Y;
 
         window.Closing += _ => {
-            _sawmill.Info($"OS window closing for {Id.Value} default={WindowDescriptor.IsDefault.Value} pane={WindowDescriptor.IsPane.Value}");
-
             // A window can have a command set to be run when it's closed
             if (!string.IsNullOrWhiteSpace(WindowDescriptor.OnClose.Value)) {
                 InterfaceManager.RunCommand(WindowDescriptor.OnClose.Value);
