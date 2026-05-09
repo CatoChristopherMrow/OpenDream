@@ -42,7 +42,7 @@ public sealed partial class MainMenuState : State {
         _client.RunLevelChanged -= RunLevelChanged;
         _netManager.ConnectFailed -= _onConnectFailed;
 
-        _mainMenuControl.Dispose();
+        _mainMenuControl.Orphan();
     }
 
     private void UsernameBoxChanged(LineEdit.LineEditEventArgs args) {

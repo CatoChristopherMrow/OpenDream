@@ -1,5 +1,6 @@
 using OpenDreamShared.Network.Messages;
 using Robust.Client.Audio;
+using Robust.Shared.Audio;
 using Robust.Shared.Audio.Components;
 
 namespace OpenDreamClient.Audio;
@@ -11,7 +12,7 @@ public sealed class DreamSoundChannel(AudioSystem audioSystem, (EntityUid Entity
     public SoundData SoundData {
         get {
             _soundData.Offset = Source.Component.PlaybackPosition;
-            _soundData.Length = (float)audioSystem.GetAudioLength(Source.Component.FileName).TotalSeconds;
+            _soundData.Length = (float)audioSystem.GetAudioLength(new ResolvedPathSpecifier(Source.Component.FileName)).TotalSeconds;
             return _soundData;
         }
     }

@@ -9,7 +9,7 @@ public sealed class DreamObjectFilter(DreamObjectDefinition objectDefinition) : 
 
     public override bool ShouldCallNew => false;
 
-    public DreamFilter Filter;
+    public DreamFilter Filter = null!;
 
     protected override void HandleDeletion() {
         FilterAttachedTo.Remove(Filter);

@@ -568,7 +568,8 @@ public sealed partial class DreamValueJsonConverter : JsonConverter<DreamValue> 
 
                     // TODO Check what happens with multiple states
                     var resource = icon.Icon.GenerateDMI();
-                    var base64 = Convert.ToBase64String(resource.ResourceData);
+                    var resourceData = resource.ResourceData ?? throw new InvalidOperationException("Generated DMI resource did not contain data");
+                    var base64 = Convert.ToBase64String(resourceData);
                     writer.WriteString("icon-data", base64);
                 }
 
@@ -594,7 +595,7 @@ public sealed partial class DreamValueJsonConverter : JsonConverter<DreamValue> 
 
         DreamValue value;
         switch (type) {
-            case DreamValue.DreamValueType.String: value = new DreamValue(reader.GetString()); break;
+            case DreamValue.DreamValueType.String: value = new DreamValue(reader.GetString() ?? string.Empty); break;
             case DreamValue.DreamValueType.Float: value = new DreamValue(reader.GetSingle()); break;
             case DreamValue.DreamValueType.DreamObject: {
                 string? objectTypePath = reader.GetString();
@@ -651,6 +652,7 @@ public sealed class DreamValueDataNode(DreamValue value)
         return Value == node.Value ? null : Copy();
     }
 
+    [Obsolete("DataNode inheritance is obsolete")]
     public override DreamValueDataNode PushInheritance(DreamValueDataNode node) {
         return Copy();
     }

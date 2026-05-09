@@ -822,7 +822,12 @@ public sealed class DMProcState : ProcState {
             case DMReference.Type.Self: SetReturn(value); break;
             case DMReference.Type.Argument: SetArgument(reference.Value, value); break;
             case DMReference.Type.Local: SetLocal(reference.Value, value); break;
-            case DMReference.Type.SrcField: Instance.SetVariable(ResolveString(reference.Value), value); break;
+            case DMReference.Type.SrcField:
+                if (Instance == null)
+                    throw new Exception("Cannot assign a src field without an instance");
+
+                Instance.SetVariable(ResolveString(reference.Value), value);
+                break;
             case DMReference.Type.Global: DreamManager.SetGlobal(reference.Value, value); break;
             case DMReference.Type.Src:
                 Instance?.DecRef();
@@ -1237,11 +1242,15 @@ public sealed class DMProcState : ProcState {
                     if (proc.OwningType == _state.Proc.ObjectTree.MutableAppearance && proc.Name == "New")
                         proc = _state.DreamManager.ImageConstructor;
 
+                    if (proc == null)
+                        throw new Exception("Cannot use named arguments here");
+
+                    DreamProc targetProc = proc ?? throw new Exception("Cannot use named arguments here");
                     var argumentCount = Count;
-                    var arguments = new DreamValue[Math.Max(argumentCount, proc.ArgumentNames.Count)];
+                    var arguments = new DreamValue[Math.Max(argumentCount, targetProc.ArgumentNames?.Count ?? 0)];
                     var skippingArg = false;
-                    var isImageConstructor = proc == _state.Proc.DreamManager.ImageConstructor ||
-                                             proc == _state.Proc.DreamManager.ImageFactoryProc;
+                    var isImageConstructor = targetProc == _state.Proc.DreamManager.ImageConstructor ||
+                                             targetProc == _state.Proc.DreamManager.ImageFactoryProc;
 
                     Array.Fill(arguments, DreamValue.Null);
                     for (int i = 0; i < argumentCount; i++) {
@@ -1260,7 +1269,7 @@ public sealed class DMProcState : ProcState {
                             arguments[skippingArg ? i + 1 : i] = value;
                         } else {
                             string argumentName = key.MustGetValueAsString();
-                            int argumentIndex = proc.ArgumentNames.IndexOf(argumentName);
+                            int argumentIndex = targetProc.ArgumentNames?.IndexOf(argumentName) ?? -1;
                             if (argumentIndex == -1)
                                 throw new Exception($"{proc} has no argument named \"{argumentName}\"");
 
@@ -1280,11 +1289,17 @@ public sealed class DMProcState : ProcState {
                     if (proc.OwningType == _state.Proc.ObjectTree.MutableAppearance && proc.Name == "New")
                         proc = _state.Proc.DreamManager.ImageConstructor;
 
-                    var listValues = argList.GetValues();
-                    var arguments = new DreamValue[Math.Max(listValues.Count, proc.ArgumentNames.Count)];
+                    if (proc == null)
+                        throw new Exception("Cannot use an arglist here");
+                    if (argList == null)
+                        return new DreamProcArguments();
+
+                    DreamProc targetProc = proc ?? throw new Exception("Cannot use an arglist here");
+                    var listValues = argList.EnumerateValues().ToList();
+                    var arguments = new DreamValue[Math.Max(listValues.Count, targetProc.ArgumentNames?.Count ?? 0)];
                     var skippingArg = false;
-                    var isImageConstructor = proc == _state.Proc.DreamManager.ImageConstructor ||
-                                             proc == _state.Proc.DreamManager.ImageFactoryProc;
+                    var isImageConstructor = targetProc == _state.Proc.DreamManager.ImageConstructor ||
+                                             targetProc == _state.Proc.DreamManager.ImageFactoryProc;
 
                     Array.Fill(arguments, DreamValue.Null);
                     for (int i = 0; i < listValues.Count; i++) {
@@ -1294,7 +1309,7 @@ public sealed class DMProcState : ProcState {
                             if (!value.TryGetValueAsString(out var argumentName))
                                 throw new Exception("List contains a non-string key, and cannot be used as an arglist");
 
-                            int argumentIndex = proc.ArgumentNames.IndexOf(argumentName);
+                            int argumentIndex = targetProc.ArgumentNames?.IndexOf(argumentName) ?? -1;
                             if (argumentIndex == -1)
                                 throw new Exception($"{proc} has no argument named \"{argumentName}\"");
 

@@ -2,7 +2,6 @@
 using Robust.Client.Graphics;
 using Robust.Client.ResourceManagement;
 using Robust.Client.UserInterface.RichText;
-using Robust.Shared.Prototypes;
 using Robust.Shared.Utility;
 
 namespace OpenDreamClient.Interface.Html.Tags;
@@ -14,12 +13,13 @@ namespace OpenDreamClient.Interface.Html.Tags;
 [UsedImplicitly]
 public sealed partial class TagFont : IMarkupTagHandler {
     [Dependency] private IResourceCache _resourceCache = default!;
-    [Dependency] private IPrototypeManager _prototypeManager = default!;
+
+    private static readonly ResPath DefaultFontPath = new("/Fonts/NotoSans-Regular.ttf");
 
     public string Name => "font"; // Overrides RobustToolbox's font tag
 
     public void PushDrawContext(MarkupNode node, MarkupDrawingContext context) {
-        var font = CreateFont(context.Font, node, _resourceCache, _prototypeManager);
+        var font = CreateFont(context.Font, node, _resourceCache);
 
         node.Attributes.TryGetValue("color", out var colorParameter);
         var textColor = colorParameter.ColorValue ?? context.Color.Peek();
@@ -36,8 +36,7 @@ public sealed partial class TagFont : IMarkupTagHandler {
     private static Font CreateFont(
         Stack<Font> contextFontStack,
         MarkupNode node,
-        IResourceCache cache,
-        IPrototypeManager prototypeManager) {
+        IResourceCache cache) {
         var size = 1;
 
         if (contextFontStack.TryPeek(out var previousFont)) {
@@ -60,8 +59,7 @@ public sealed partial class TagFont : IMarkupTagHandler {
         size = Math.Max(size, 1);
 
         // TODO: Support fonts other than the default
-        var prototype = prototypeManager.Index<FontPrototype>("Default");
-        var fontResource = cache.GetResource<FontResource>(prototype.Path);
+        var fontResource = cache.GetResource<FontResource>(DefaultFontPath);
         return new VectorFont(fontResource, size * 2 + 8); // This gives a font size close enough to BYOND's
     }
 }

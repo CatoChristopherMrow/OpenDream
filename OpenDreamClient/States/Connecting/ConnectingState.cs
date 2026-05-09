@@ -18,6 +18,6 @@ public sealed partial class ConnectingState : State {
     }
 
     protected override void Shutdown() {
-        _connectingControl.Dispose();
+        _connectingControl.Orphan();
     }
 }

@@ -100,7 +100,7 @@ public sealed partial class DreamConnection {
         set {
             _selectedStatPanel = value;
 
-            var msg = new MsgSelectStatPanel() { StatPanel = value };
+            var msg = new MsgSelectStatPanel() { StatPanel = value ?? string.Empty };
             Session?.Channel.SendMessage(msg);
         }
     }
@@ -192,7 +192,7 @@ public sealed partial class DreamConnection {
         if (_outputStatPanel == null || !_statPanels.ContainsKey(_outputStatPanel))
             SetOutputStatPanel("Stats");
 
-        _statPanels[_outputStatPanel].Add((name, value, atomRef));
+        _statPanels[_outputStatPanel!].Add((name, value, atomRef));
     }
 
     public void HandleMsgSelectStatPanel(MsgSelectStatPanel message) {
@@ -405,7 +405,7 @@ public sealed partial class DreamConnection {
         var task = MakePromptTask(out var promptId);
         var msg = new MsgWinGet() {
             PromptId = promptId,
-            ControlId = controlId,
+            ControlId = controlId ?? string.Empty,
             QueryValue = queryValue
         };
 
@@ -463,7 +463,6 @@ public sealed partial class DreamConnection {
                 Filename = filename,
                 Data = dreamResource.ResourceData!, //honestly if this is null, something mega fucked up has happened and we should error hard
             };
-            _permittedBrowseRscFiles.Remove(filename);
             Session?.Channel.SendMessage(msg);
         } else {
             _sawmill.Error($"Client({Session}) requested a browse_rsc file they had not been permitted to request ({filename}).");
@@ -505,7 +504,7 @@ public sealed partial class DreamConnection {
 
     public void WinSet(string? controlId, string @params) {
         var msg = new MsgWinSet() {
-            ControlId = controlId,
+            ControlId = controlId ?? string.Empty,
             Params = @params
         };
 

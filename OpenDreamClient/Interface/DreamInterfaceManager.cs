@@ -1,6 +1,7 @@
 ﻿using System.IO;
 using System.Text;
 using System.Globalization;
+using System.Threading.Tasks;
 using OpenDreamShared.Network.Messages;
 using OpenDreamClient.Interface.Controls;
 using OpenDreamShared.Interface.Descriptors;
@@ -17,6 +18,7 @@ using Robust.Client.UserInterface.Controls;
 using Robust.Shared.ContentPack;
 using Robust.Shared.Network;
 using Robust.Shared.Random;
+using Robust.Shared.Asynchronous;
 using Robust.Shared.Serialization.Manager;
 using Robust.Shared.Timing;
 using Robust.Shared.Utility;
@@ -44,10 +46,11 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
     [Dependency] private ITimerManager _timerManager = default!;
     [Dependency] private IUriOpener _uriOpener = default!;
     [Dependency] private IGameController _gameController = default!;
+    [Dependency] private ITaskManager _taskManager = default!;
 
     private readonly ISawmill _sawmill = Logger.GetSawmill("opendream.interface");
 
-    public InterfaceDescriptor InterfaceDescriptor { get; private set; }
+    public InterfaceDescriptor InterfaceDescriptor { get; private set; } = default!;
 
     public ControlWindow? DefaultWindow { get; private set; }
     public ControlOutput? DefaultOutput { get; private set; }
@@ -138,24 +141,54 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
         _clyde.OnWindowFocused += OnWindowFocused;
     }
 
+    private void RunOnMainThread(Action callback) {
+        _taskManager.RunOnMainThread(() => {
+            try {
+                callback();
+            } catch (Exception e) {
+                _sawmill.Error($"Exception while handling interface network message on the main thread: {e}");
+            }
+        });
+    }
+
+    private void RunOnMainThread(Func<Task> callback) {
+        _taskManager.RunOnMainThread(async () => {
+            try {
+                await callback();
+            } catch (Exception e) {
+                _sawmill.Error($"Exception while handling interface network message on the main thread: {e}");
+            }
+        });
+    }
+
     private void RxUpdateStatPanels(MsgUpdateStatPanels message) {
-        DefaultInfo?.UpdateStatPanels(message);
+        RunOnMainThread(() => DefaultInfo?.UpdateStatPanels(message));
     }
 
     private void RxSelectStatPanel(MsgSelectStatPanel message) {
-        DefaultInfo?.SelectStatPanel(message.StatPanel);
+        var statPanel = message.StatPanel;
+        RunOnMainThread(() => DefaultInfo?.SelectStatPanel(statPanel));
     }
 
     private void RxOutput(MsgOutput pOutput) {
-        Output(pOutput.Control, pOutput.Value);
+        var control = pOutput.Control;
+        var value = pOutput.Value;
+        RunOnMainThread(() => Output(control, value));
     }
 
     private void RxAlert(MsgAlert message) {
-        OpenAlert(
-            message.Title,
-            message.Message,
-            message.Button1, message.Button2, message.Button3,
-            (responseType, response) => OnPromptFinished(message.PromptId, responseType, response));
+        var title = message.Title;
+        var body = message.Message;
+        var button1 = message.Button1;
+        var button2 = message.Button2;
+        var button3 = message.Button3;
+        var promptId = message.PromptId;
+
+        RunOnMainThread(() => OpenAlert(
+            title,
+            body,
+            button1, button2, button3,
+            (responseType, response) => OnPromptFinished(promptId, responseType, response)));
     }
 
     public void OpenAlert(string title, string message, string button1, string? button2, string? button3, Action<DreamValueType, object?>? onClose) {
@@ -170,30 +203,52 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
     }
 
     private void RxPrompt(MsgPrompt pPrompt) {
+        var types = pPrompt.Types;
+        var title = pPrompt.Title;
+        var message = pPrompt.Message;
+        var defaultValue = pPrompt.DefaultValue;
+        var promptId = pPrompt.PromptId;
+
         void OnPromptClose(DreamValueType responseType, object? response) {
-            OnPromptFinished(pPrompt.PromptId, responseType, response);
+            OnPromptFinished(promptId, responseType, response);
         }
 
-        Prompt(pPrompt.Types, pPrompt.Title, pPrompt.Message, pPrompt.DefaultValue, OnPromptClose);
+        RunOnMainThread(() => Prompt(types, title, message, defaultValue, OnPromptClose));
     }
 
     private void RxPromptList(MsgPromptList pPromptList) {
-        var prompt = new ListPrompt(
-            pPromptList.Title,
-            pPromptList.Message,
-            pPromptList.DefaultValue,
-            pPromptList.CanCancel,
-            pPromptList.Values,
-            (responseType, response) => OnPromptFinished(pPromptList.PromptId, responseType, response)
-        );
+        var title = pPromptList.Title;
+        var message = pPromptList.Message;
+        var defaultValue = pPromptList.DefaultValue;
+        var canCancel = pPromptList.CanCancel;
+        var values = pPromptList.Values;
+        var promptId = pPromptList.PromptId;
 
-        ShowPrompt(prompt);
+        RunOnMainThread(() => {
+            var prompt = new ListPrompt(
+                title,
+                message,
+                defaultValue,
+                canCancel,
+                values,
+                (responseType, response) => OnPromptFinished(promptId, responseType, response)
+            );
+
+            ShowPrompt(prompt);
+        });
     }
 
     private void RxBrowse(MsgBrowse pBrowse) {
-        var referencedElement = (pBrowse.Window != null) ? FindElementWithId(pBrowse.Window) : DefaultWindow;
+        var window = pBrowse.Window;
+        var htmlSource = pBrowse.HtmlSource;
+        var size = pBrowse.Size;
+        RunOnMainThread(() => Browse(window, htmlSource, size));
+    }
 
-        if (pBrowse.HtmlSource == null && referencedElement != null) {
+    private void Browse(string? windowId, string? htmlSource, Vector2i size) {
+        var referencedElement = (windowId != null) ? FindElementWithId(windowId) : DefaultWindow;
+
+        if (htmlSource == null && referencedElement != null) {
             // Closing the referenced window or browser
 
             if (referencedElement is ControlWindow window) {
@@ -202,8 +257,8 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
                 // TODO: What does "closing" the browser mean? Redirect to a blank page or remove the control entirely?
                 browser.SetFileSource(null);
             }
-        } else if (pBrowse.HtmlSource != null) {
-            var htmlFileName = $"browse_{pBrowse.Window}_{_random.Next()}"; // TODO: Possible collisions and explicit file names
+        } else if (htmlSource != null) {
+            var htmlFileName = $"browse_{windowId}_{_random.Next()}"; // TODO: Possible collisions and explicit file names
             ControlBrowser? outputBrowser = referencedElement as ControlBrowser;
 
             if (outputBrowser == null) {
@@ -218,97 +273,122 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
                         outputBrowser = browser;
                         break;
                     }
-                } else if (pBrowse.Window != null) {
+                } else if (windowId != null) {
                     // Creating a new popup
-                    var popup = new BrowsePopup(pBrowse.Window, pBrowse.Size, _clyde.MainWindow);
-                    popup.Closed += () => { Windows.Remove(pBrowse.Window); };
+                    var popup = new BrowsePopup(windowId, size, _clyde.MainWindow);
+                    popup.Closed += () => { Windows.Remove(windowId); };
 
                     outputBrowser = popup.Browser;
-                    Windows.Add(pBrowse.Window, popup.WindowElement);
+                    Windows.Add(windowId, popup.WindowElement);
                     popup.Open();
                 }
             }
 
             if (outputBrowser == null) {
-                _sawmill.Error($"Failed to find a browser element in window \"{pBrowse.Window}\" to browse()");
+                _sawmill.Error($"Failed to find a browser element in window \"{windowId}\" to browse()");
                 return;
             }
 
-            var cacheFile = _dreamResource.CreateCacheFile(htmlFileName + ".html", pBrowse.HtmlSource);
+            var cacheFile = _dreamResource.CreateCacheFile(htmlFileName + ".html", htmlSource);
             outputBrowser.SetFileSource(cacheFile);
         }
     }
 
     private void RxWinSet(MsgWinSet message) {
-        WinSet(message.ControlId, message.Params);
+        var controlId = message.ControlId;
+        var winsetParams = message.Params;
+        RunOnMainThread(() => WinSet(controlId, winsetParams));
     }
 
     private void RxWinClone(MsgWinClone message) {
-        WinClone(message.ControlId, message.CloneId);
+        var controlId = message.ControlId;
+        var cloneId = message.CloneId;
+        RunOnMainThread(() => WinClone(controlId, cloneId));
     }
 
     private void RxWinExists(MsgWinExists message) {
-        InterfaceElement? element = FindElementWithId(message.ControlId);
-        MsgPromptResponse response = new() {
-            PromptId = message.PromptId,
-            Type = DreamValueType.Text,
-            Value = element?.Type.Value ?? string.Empty
-        };
+        var controlId = message.ControlId;
+        var promptId = message.PromptId;
 
-        _netManager.ClientSendMessage(response);
-    }
-
-    private void RxWinGet(MsgWinGet message) {
-        // Run this later to ensure any pending UI measurements have occured
-        _timerManager.AddTimer(new Timer(100, false, () => {
+        RunOnMainThread(() => {
+            InterfaceElement? element = FindElementWithId(controlId);
             MsgPromptResponse response = new() {
-                PromptId = message.PromptId,
+                PromptId = promptId,
                 Type = DreamValueType.Text,
-                Value = WinGet(message.ControlId, message.QueryValue, forceSnowflake:true)
+                Value = element?.Type.Value ?? string.Empty
             };
 
             _netManager.ClientSendMessage(response);
-        }));
+        });
+    }
+
+    private void RxWinGet(MsgWinGet message) {
+        var controlId = message.ControlId;
+        var queryValue = message.QueryValue;
+        var promptId = message.PromptId;
+
+        // Run this later to ensure any pending UI measurements have occured
+        RunOnMainThread(() => _timerManager.AddTimer(new Timer(100, false, () => {
+            MsgPromptResponse response = new() {
+                PromptId = promptId,
+                Type = DreamValueType.Text,
+                Value = WinGet(controlId, queryValue, forceSnowflake:true)
+            };
+
+            _netManager.ClientSendMessage(response);
+        })));
     }
 
     private void RxLink(MsgLink message) {
+        var url = message.Url;
+        RunOnMainThread(() => Link(url));
+    }
+
+    private void Link(string url) {
         Uri uri;
         try {
-            uri = new Uri(message.Url);
+            uri = new Uri(url);
         } catch (Exception e) {
-            _sawmill.Error($"Received link \"{message.Url}\" which failed to parse as a valid URI: {e.Message}");
+            _sawmill.Error($"Received link \"{url}\" which failed to parse as a valid URI: {e.Message}");
             return;
         }
 
         // TODO: This can be a topic call
 
         if (uri.Scheme is "http" or "https") {
-            _uriOpener.OpenUri(message.Url);
+            _uriOpener.OpenUri(url);
         } else if (uri.Scheme is "ss14" or "ss14s") {
             if (_gameController.LaunchState.FromLauncher)
-                _gameController.Redial(message.Url, "link() used to connect to another server.");
+                _gameController.Redial(url, "link() used to connect to another server.");
             else
                 _sawmill.Warning("link() only supports connecting to other servers when utilizing the launcher. Ignoring.");
         } else {
-            _sawmill.Warning($"Received link \"{message.Url}\" which is not supported. Ignoring.");
+            _sawmill.Warning($"Received link \"{url}\" which is not supported. Ignoring.");
         }
     }
 
     private void RxFtp(MsgFtp message) {
-        _dreamResource.LoadResourceAsync<DreamResource>(message.ResourceId, async resource => {
-            // TODO: Default the filename to message.SuggestedName
-            // RT doesn't seem to support this currently
-            var tuple = await _fileDialogManager.SaveFile();
-            if (tuple == null) // User cancelled
-                return;
+        var resourceId = message.ResourceId;
+        _dreamResource.LoadResourceAsync<DreamResource>(resourceId, resource => {
+            RunOnMainThread(async () => {
+                // TODO: Default the filename to message.SuggestedName
+                // RT doesn't seem to support this currently
+                var tuple = await _fileDialogManager.SaveFile();
+                if (tuple == null) // User cancelled
+                    return;
 
-            await using var file = tuple.Value.fileStream;
-            resource.WriteTo(file);
+                await using var file = tuple.Value.fileStream;
+                resource.WriteTo(file);
+            });
         });
     }
 
     private void RxLoadInterface(MsgLoadInterface message) {
-        string? interfaceText = message.InterfaceText;
+        var interfaceText = message.InterfaceText;
+        RunOnMainThread(() => LoadInterface(interfaceText));
+    }
+
+    private void LoadInterface(string? interfaceText) {
         if (interfaceText == null) {
             if (!_resourceManager.TryContentFileRead(DefaultInterfaceFile.CanonPath, out var defaultInterface)) {
                 // Open an error message that disconnects from the server once closed
@@ -330,13 +410,24 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
     }
 
     private void RxUpdateClientInfo(MsgUpdateClientInfo msg) {
-        IconSize = msg.IconSize;
-        View = msg.View;
-        ShowPopupMenus = msg.ShowPopupMenus;
-        if (msg.CursorResource != 0)
-            _dreamResource.LoadResourceAsync<DMIResource>(msg.CursorResource, resource => {
-                //TODO should trigger a cursor update immediately
-                Cursors = new(_clyde, resource);
+        var iconSize = msg.IconSize;
+        var view = msg.View;
+        var showPopupMenus = msg.ShowPopupMenus;
+        var cursorResource = msg.CursorResource;
+
+        RunOnMainThread(() => UpdateClientInfo(iconSize, view, showPopupMenus, cursorResource));
+    }
+
+    private void UpdateClientInfo(int iconSize, ViewRange view, bool showPopupMenus, int cursorResource) {
+        IconSize = iconSize;
+        View = view;
+        ShowPopupMenus = showPopupMenus;
+        if (cursorResource != 0)
+            _dreamResource.LoadResourceAsync<DMIResource>(cursorResource, resource => {
+                RunOnMainThread(() => {
+                    //TODO should trigger a cursor update immediately
+                    Cursors = new(_clyde, resource);
+                });
             });
         else {
             Cursors = new(_clyde); //reset to default

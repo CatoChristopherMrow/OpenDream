@@ -8,6 +8,7 @@ using Robust.Shared.Network;
 using Robust.Shared.Utility;
 using Robust.Shared.Asynchronous;
 using System.Linq;
+using System.Threading.Tasks;
 using SpaceWizards.Sodium;
 
 namespace OpenDreamClient.Resources;
@@ -51,6 +52,7 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
     private ISawmill _sawmill = default!;
 
     private readonly HashSet<string> _activeBrowseRscRequests = new();
+    private readonly object _browseRscLock = new();
 
     private static string NormalizeCacheFilename(string filename) {
         // BYOND drops directory components for browse_rsc() cache filenames.
@@ -96,8 +98,12 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
         if(_resourceManager.UserData.Exists(cacheFilePath) && GetFileHash(cacheFilePath).SequenceEqual(message.DataHash)){
             _sawmill.Verbose($"Cache hit for {filename}");
         } else {
-            if (_activeBrowseRscRequests.Contains(filename)) //we've already requested it, don't need to do it again
-                return;
+            lock (_browseRscLock) {
+                if (_activeBrowseRscRequests.Contains(filename)) //we've already requested it, don't need to do it again
+                    return;
+
+                _activeBrowseRscRequests.Add(filename);
+            }
 
             if (_resourceManager.UserData.Exists(cacheFilePath)) {
                 _sawmill.Debug($"Cache hit for {filename} but hashes did not match (hash: {BitConverter.ToString(GetFileHash(cacheFilePath))}). Re-requesting!");
@@ -106,7 +112,6 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
                 _sawmill.Debug($"Cache miss for {filename}, requesting from server.");
             }
 
-            _activeBrowseRscRequests.Add(filename);
             _netManager.ServerChannel?.SendMessage(new MsgBrowseResourceRequest { Filename = filename });
         }
     }
@@ -121,13 +126,16 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
     private void RxBrowseResourceResponse(MsgBrowseResourceResponse message) {
         var filename = NormalizeCacheFilename(message.Filename);
 
-        if (_activeBrowseRscRequests.Contains(filename)) {
-            _activeBrowseRscRequests.Remove(filename);
-            EnsureCacheDirectory();
-            CreateCacheFile(filename, message.Data);
-        } else {
-            _sawmill.Error($"Received a browse_rsc response for a file we didn't ask for: {filename}");
+        bool expected;
+        lock (_browseRscLock) {
+            expected = _activeBrowseRscRequests.Remove(filename);
         }
+
+        if (!expected)
+            _sawmill.Debug($"Received a browse_rsc response for a file we were no longer waiting for: {filename}");
+
+        EnsureCacheDirectory();
+        CreateCacheFile(filename, message.Data);
     }
 
     private void RxResource(MsgResource message) {
@@ -276,12 +284,17 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
         }
 
         var requestedSpeculatively = false;
-        if (!_activeBrowseRscRequests.Contains(filename)) {
-            // The embedded browser can request subresources before the browse_rsc()
-            // announcement packet has been processed locally. Ask the server; it
-            // will only answer if this file was actually permitted.
-            _activeBrowseRscRequests.Add(filename);
-            requestedSpeculatively = true;
+        lock (_browseRscLock) {
+            if (!_activeBrowseRscRequests.Contains(filename)) {
+                // The embedded browser can request subresources before the browse_rsc()
+                // announcement packet has been processed locally. Ask the server; it
+                // will only answer if this file was actually permitted.
+                _activeBrowseRscRequests.Add(filename);
+                requestedSpeculatively = true;
+            }
+        }
+
+        if (requestedSpeculatively) {
             _netManager.ServerChannel?.SendMessage(new MsgBrowseResourceRequest { Filename = filename });
         }
 
@@ -289,13 +302,15 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
         var waitSeconds = requestedSpeculatively ? Math.Min(timeoutSeconds, 1) : timeoutSeconds;
         DateTime thresholdTime = DateTime.Now.AddSeconds(waitSeconds);
         while (!_resourceManager.UserData.Exists(actualPath) && DateTime.Now < thresholdTime) {
-            _netManager.ProcessPackets(); //todo this should be sleep
+            Task.Delay(10).GetAwaiter().GetResult();
         }
 
         if (_resourceManager.UserData.Exists(actualPath))
             return true;
 
-        _activeBrowseRscRequests.Remove(filename);
+        lock (_browseRscLock) {
+            _activeBrowseRscRequests.Remove(filename);
+        }
         _sawmill.Error(requestedSpeculatively
             ? $"Cache was ensured for a file ({filename}) that does not exist in cache and did not arrive after requesting it from the server."
             : $"Cache was ensured for a file ({filename}) that does not exist in cache and is not requested. Probably somebody called browse() without browse_rsc() first.");

@@ -11,9 +11,9 @@ using SixLabors.ImageSharp.Processing;
 namespace OpenDreamClient.Resources.ResourceTypes;
 
 public sealed class DMIResource : DreamResource {
-    public Texture Texture;
+    public Texture Texture = default!;
     public Vector2i IconSize;
-    public DMIParser.ParsedDMIDescription Description;
+    public DMIParser.ParsedDMIDescription Description = default!;
 
     private readonly IClyde _clyde;
     private readonly ITaskManager _taskManager;

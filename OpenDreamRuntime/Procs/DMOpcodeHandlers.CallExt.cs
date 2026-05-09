@@ -85,7 +85,7 @@ internal static partial class DMOpcodeHandlers {
                 return ProcStatus.Continue;
             }
 
-            var retString = Marshal.PtrToStringUTF8((nint)ret);
+            var retString = Marshal.PtrToStringUTF8((nint)ret) ?? string.Empty;
             state.Push(new DreamValue(retString));
             return ProcStatus.Continue;
         } finally {

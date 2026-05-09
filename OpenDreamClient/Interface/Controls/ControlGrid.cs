@@ -5,7 +5,7 @@ using Robust.Client.UserInterface.Controls;
 namespace OpenDreamClient.Interface.Controls;
 
 internal sealed class ControlGrid : InterfaceControl {
-    private GridContainer _grid;
+    private GridContainer _grid = default!;
 
     public ControlGrid(ControlDescriptor controlDescriptor, ControlWindow window) :
         base(controlDescriptor, window) {

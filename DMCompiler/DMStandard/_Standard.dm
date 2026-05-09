@@ -1,3 +1,6 @@
+#include "_Globals.dm" // This needs to go before the defines
+#include "Defines.dm"
+
 //These procs should be in alphabetical order, as in DreamProcNativeRoot.cs
 proc/alert(Usr = usr, Message, Title, Button1 = "Ok", Button2, Button3) as text
 proc/animate(Object, time, loop, easing, flags, delay, pixel_x, pixel_y, pixel_z, maptext, maptext_width, maptext_height, maptext_x, maptext_y, dir, alpha, transform, color, luminosity, infra_luminosity, layer, glide_size, icon, icon_state, invisibility, suffix) as null
@@ -135,8 +138,6 @@ proc/winexists(player, control_id) as text
 proc/winget(player, control_id, params)
 proc/winset(player, control_id, params)
 
-#include "_Globals.dm" // This needs to go before the defines
-#include "Defines.dm"
 #include "Types\AList.dm"
 #include "Types\Callee.dm"
 #include "Types\Client.dm"

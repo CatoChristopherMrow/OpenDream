@@ -145,7 +145,7 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
         PixelArrayPool.Return(pixels, clearArray: true);
 
         using var dmiImageStream = new MemoryStream();
-        var pngTextData = new PngTextData("Description", newDescription.ExportAsText(), null, null);
+        var pngTextData = new PngTextData("Description", newDescription.ExportAsText(), string.Empty, string.Empty);
         var pngMetadata = dmiImage.Metadata.GetPngMetadata();
         pngMetadata.TextData.Add(pngTextData);
 

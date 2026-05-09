@@ -69,7 +69,7 @@ namespace OpenDreamRuntime {
 
         // Execute this proc. This will behave as if the proc has `set waitfor = 0`
         [MustDisposeResource]
-        public DreamValue Spawn(DreamObject src, [HandlesResourceDisposal] DreamProcArguments arguments, DreamObject? usr = null) {
+        public DreamValue Spawn(DreamObject? src, [HandlesResourceDisposal] DreamProcArguments arguments, DreamObject? usr = null) {
             var context = new DreamThread(ToString());
             var state = CreateState(context, src, usr, arguments);
             context.PushProcState(state);
@@ -409,7 +409,7 @@ namespace OpenDreamRuntime {
             }
 
             // Maybe a bit of a hack? If the state got deferred to another thread it shouldn't be disposed.
-            if (dispose && _current.Thread == this) {
+            if (dispose && _current?.Thread == this) {
                 _current.Dispose();
             }
 
@@ -534,11 +534,11 @@ namespace OpenDreamRuntime {
         private bool TryCatchException(Exception exception) {
             if (!InspectStack().Any(x => x.IsCatching())) return false;
 
-            while (!_current.IsCatching()) {
+            while (_current != null && !_current.IsCatching()) {
                 PopProcState();
             }
 
-            _current.CatchException(exception);
+            _current?.CatchException(exception);
             return true;
         }
     }

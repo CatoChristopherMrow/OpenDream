@@ -14,13 +14,14 @@ using OpenDreamShared.Dream;
 using Robust.Server;
 using Robust.Server.Player;
 using Robust.Shared.Asynchronous;
+using Robust.Shared.Random;
 using Robust.Shared.Timing;
 using System.Diagnostics.CodeAnalysis;
 
 namespace OpenDreamRuntime;
 
 public sealed partial class DreamManager {
-    public DreamObjectWorld WorldInstance { get; set; }
+    public DreamObjectWorld WorldInstance { get; set; } = default!;
     public Exception? LastDMException { get; set; }
 
     public event EventHandler<Exception>? OnException;
@@ -30,8 +31,8 @@ public sealed partial class DreamManager {
     public List<string> GlobalNames { get; private set; } = new();
     public HashSet<DreamObject> Clients { get; } = new();
 
-    public Random Random { get; set; } = new();
-    public DreamProc ImageConstructor, ImageFactoryProc;
+    public IRobustRandom Random { get; } = new RobustRandom();
+    public DreamProc ImageConstructor = default!, ImageFactoryProc = default!;
     public int ListPoolThreshold, ListPoolSize;
     public Dictionary<WarningCode, ErrorLevel> OptionalErrors { get; private set; } = new();
     public bool Initialized { get; private set; }
@@ -168,7 +169,7 @@ public sealed partial class DreamManager {
             GlobalNames = jsonGlobals.Names;
 
             for (int i = 0; i < jsonGlobals.GlobalCount; i++) {
-                var globalJson = jsonGlobals.Globals.GetValueOrDefault(i, null);
+                var globalJson = ((IReadOnlyDictionary<int, object?>) jsonGlobals.Globals).GetValueOrDefault(i, null);
                 using var globalValue = _objectTree.GetDreamValueFromJsonElement(globalJson);
 
                 SetGlobal(i, globalValue);

@@ -277,7 +277,7 @@ public sealed partial class DreamResourceManager {
                 Directory.CreateDirectory(dir);
 
             if (sourceFile.ResourceData == null)
-                File.WriteAllText(string.Empty, destinationFilePath);
+                File.WriteAllText(destinationFilePath, string.Empty);
             else
                 File.WriteAllBytes(destinationFilePath, sourceFile.ResourceData);
         } catch (Exception) {
@@ -288,7 +288,7 @@ public sealed partial class DreamResourceManager {
     }
 
     public string[] EnumerateListing(string path) {
-        string directory = Path.GetDirectoryName(path);
+        string directory = Path.GetDirectoryName(path) ?? ".";
         string searchPattern = Path.GetFileName(path);
 
         var entries = Directory.GetFileSystemEntries(directory, searchPattern);

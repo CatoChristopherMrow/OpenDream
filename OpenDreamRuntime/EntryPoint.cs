@@ -77,7 +77,7 @@ namespace OpenDreamRuntime {
                 try {
                     savefile.Close();
                 } catch (Exception e) {
-                    Logger.GetSawmill("opendream").Error($"Exception while flushing savefile '{savefile.Resource.ResourcePath}', data has been lost. {e}");
+                    Logger.GetSawmill("opendream").Error($"Exception while flushing savefile '{savefile.Resource?.ResourcePath ?? "<unknown>"}', data has been lost. {e}");
                 }
             }
 

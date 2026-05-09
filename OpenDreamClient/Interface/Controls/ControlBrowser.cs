@@ -87,8 +87,17 @@ internal sealed partial class ControlBrowser : InterfaceControl {
             parts[i] = "\""+HttpUtility.JavaScriptStringEncode(HttpUtility.UrlDecode(parts[i]))+"\""; //wrap in quotes and encode for JS
         }
 
+        if (_webView.Disposed)
+            return;
+
         // Insert the values directly into JS and execute it (what could go wrong??)
-        _webView.ExecuteJavaScript($"{jsFunction}({string.Join(",", parts)})");
+        try {
+            _webView.ExecuteJavaScript($"{jsFunction}({string.Join(",", parts)})");
+        } catch (Exception e) when (e.GetType().Name == "ObjectDisposedException") {
+            // The window can close while output messages are still queued.
+        } catch (InvalidOperationException e) {
+            _sawmill.Debug($"Ignoring browser output to an unavailable web view: {e.Message}");
+        }
     }
 
     public void SetFileSource(ResPath? filepath) {
@@ -246,7 +255,16 @@ internal sealed partial class ControlBrowser : InterfaceControl {
 
         // Execute the callback
         var json = jsonBuilder.ToString();
-        _webView.ExecuteJavaScript($"{callback}({json})");
+        if (_webView.Disposed)
+            return;
+
+        try {
+            _webView.ExecuteJavaScript($"{callback}({json})");
+        } catch (Exception e) when (e.GetType().Name == "ObjectDisposedException") {
+            // The window can close while winget callbacks are still queued.
+        } catch (InvalidOperationException e) {
+            _sawmill.Debug($"Ignoring embedded winget callback to an unavailable web view: {e.Message}");
+        }
     }
 
     private void OnShowEvent() {

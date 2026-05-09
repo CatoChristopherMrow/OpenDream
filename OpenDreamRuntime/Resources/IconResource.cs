@@ -6,8 +6,8 @@ using SixLabors.ImageSharp.PixelFormats;
 namespace OpenDreamRuntime.Resources;
 
 public sealed class IconResource : DreamResource {
-    public Image<Rgba32> Texture => _texture ??= Image.Load<Rgba32>(ResourceData);
-    public DMIParser.ParsedDMIDescription DMI => _dmi ??= DMIParser.ParseDMI(new MemoryStream(ResourceData));
+    public Image<Rgba32> Texture => _texture ??= Image.Load<Rgba32>(ResourceData ?? throw new InvalidOperationException("Icon resource has no data"));
+    public DMIParser.ParsedDMIDescription DMI => _dmi ??= DMIParser.ParseDMI(new MemoryStream(ResourceData ?? throw new InvalidOperationException("Icon resource has no data")));
 
     private Image<Rgba32>? _texture;
     private DMIParser.ParsedDMIDescription? _dmi;

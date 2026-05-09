@@ -441,7 +441,7 @@ public sealed partial class DreamMapManager : IDreamMapManager {
         if (mapObject.VarOverrides?.Count > 0) {
             definition = new DreamObjectDefinition(definition);
 
-            foreach (KeyValuePair<string, object> varOverride in mapObject.VarOverrides) {
+            foreach (KeyValuePair<string, object?> varOverride in mapObject.VarOverrides) {
                 if (definition.HasVariable(varOverride.Key)) {
                     using var overrideValue = _objectTree.GetDreamValueFromJsonElement(varOverride.Value);
 

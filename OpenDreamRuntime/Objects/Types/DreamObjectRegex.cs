@@ -7,7 +7,7 @@ namespace OpenDreamRuntime.Objects.Types;
 public sealed class DreamObjectRegex(DreamObjectDefinition objectDefinition) : DreamObject(objectDefinition) {
     public override bool ShouldCallNew => false;
 
-    public Regex Regex;
+    public Regex Regex = null!;
     public bool IsGlobal;
 
     public override void Initialize(DreamProcArguments args) {

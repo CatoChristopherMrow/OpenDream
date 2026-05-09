@@ -266,6 +266,8 @@ namespace DMCompiler.Compiler.DM {
                         "Empty proc detected - add an explicit \"return\" statement");
                 }
 
+                procBlock ??= new DMASTProcBlockInner(loc);
+
                 if (path.IsOperator) {
                     List<DMASTProcStatement> procStatements = procBlock.Statements.ToList();
                     Location tokenLoc = procBlock.Location;
@@ -1912,6 +1914,7 @@ namespace DMCompiler.Compiler.DM {
                 Whitespace();
 
                 DMASTExpression? c = ExpressionTernary(isTernaryB);
+                RequireExpression(ref c);
                 if (c is DMASTVoid) c = new DMASTConstantNull(c.Location);
 
                 return new DMASTTernary(a.Location, a, b, c);
@@ -2255,8 +2258,10 @@ namespace DMCompiler.Compiler.DM {
                 return inner;
             }
 
-            if (token.Type == TokenType.DM_Var && _allowVarDeclExpression)
-                return new DMASTVarDeclExpression( loc, Path() );
+            if (token.Type == TokenType.DM_Var && _allowVarDeclExpression) {
+                var varPath = Path();
+                return varPath != null ? new DMASTVarDeclExpression(loc, varPath) : new DMASTInvalidExpression(loc);
+            }
 
             if (Constant() is { } constant)
                 return constant;

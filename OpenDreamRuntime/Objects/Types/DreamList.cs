@@ -113,7 +113,7 @@ public class DreamList : DreamObject, IDreamList {
     public IDreamList CreateCopy(int start = 1, int end = 0) {
         if (start == 0) ++start; //start being 0 and start being 1 are equivalent
 
-        var values = GetValues();
+        var values = EnumerateValues().ToList();
         if (end > values.Count + 1 || start > values.Count + 1) throw new Exception("list index out of bounds");
         if (end == 0) end = values.Count + 1;
         if (end <= start)
@@ -326,7 +326,7 @@ public class DreamList : DreamObject, IDreamList {
     }
 
     public DreamList Union(DreamList other) {
-        DreamList newList = new DreamList(ObjectDefinition, _values.Union(other.GetValues()).ToList(), null);
+        DreamList newList = new DreamList(ObjectDefinition, _values.Union(other.EnumerateValues()).ToList(), null);
         foreach ((DreamValue key, DreamValue value) in other.GetAssociativeValues()) {
             newList.SetValue(key, value);
         }
@@ -431,7 +431,7 @@ public class DreamList : DreamObject, IDreamList {
 
     public override DreamValue OperatorAppend(DreamValue b) {
         if (b.TryGetValueAsDreamList(out var bList)) {
-            var values = bList.GetValues();
+            var values = bList.EnumerateValues().ToList();
             var valueCount = values.Count; // Some lists return a reference to their internal values list which could change with each loop
             for (int i = 0; i < valueCount; i++) {
                 var value = values[i];
@@ -450,9 +450,18 @@ public class DreamList : DreamObject, IDreamList {
         return new(this);
     }
 
+    public override void OperatorOutput(DreamValue b) {
+        var values = _values.ToArray();
+
+        foreach (DreamValue value in values) {
+            if (value.TryGetValueAsDreamObject(out var outputTarget) && outputTarget != null)
+                outputTarget.OperatorOutput(b);
+        }
+    }
+
     public override DreamValue OperatorRemove(DreamValue b) {
         if (b.TryGetValueAsDreamList(out var bList)) {
-            DreamValue[] values = bList.GetValues().ToArray();
+            DreamValue[] values = bList.EnumerateValues().ToArray();
 
             foreach (DreamValue value in values) {
                 RemoveValue(value);
@@ -515,8 +524,8 @@ public class DreamList : DreamObject, IDreamList {
         if (GetLength() != secondList.GetLength())
             return DreamValue.False;
 
-        var firstValues = GetValues();
-        var secondValues = secondList.GetValues();
+        var firstValues = EnumerateValues().ToList();
+        var secondValues = secondList.EnumerateValues().ToList();
 
         var firstListAssoc = GetAssociativeValues();
         var secondListAssoc = secondList.GetAssociativeValues();
@@ -551,6 +560,7 @@ internal sealed class DreamListVars(DreamObjectDefinition listDef, DreamObject d
         return DreamObject.GetVariableNames().Concat(DreamObject.ObjectDefinition.GlobalVariables.Keys).Count();
     }
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
     }
@@ -603,7 +613,7 @@ internal sealed class DreamListVars(DreamObjectDefinition listDef, DreamObject d
     }
 
     public override int FindValue(DreamValue value, int start = 1, int end = 0) {
-        return GetValues().IndexOf(value)+1; // IndexOf is 0 indexed, returns -1 on fail, DM is 1 indexed and returns 0 on fail, so +1
+        return EnumerateValues().ToList().IndexOf(value)+1; // IndexOf is 0 indexed, returns -1 on fail, DM is 1 indexed and returns 0 on fail, so +1
     }
 }
 
@@ -612,6 +622,7 @@ internal sealed class DreamGlobalVars(DreamObjectDefinition listDef) : DreamList
     public override bool IsAssociative =>
         true; // We don't use the associative array but, yes, we behave like an associative list
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
     }
@@ -698,6 +709,7 @@ public sealed class ClientVerbsList : DreamList {
         return new DreamValue(Verbs[index - 1]);
     }
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
     }
@@ -774,6 +786,7 @@ public sealed class VerbsList(DreamObjectTree objectTree, AtomManager atomManage
         return new DreamValue(VerbSystem.GetVerb(verbs[index - 1]));
     }
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
     }
@@ -861,6 +874,7 @@ public sealed class VerbsList(DreamObjectTree objectTree, AtomManager atomManage
 // atom.overlays or atom.underlays list
 // Operates on an object's appearance
 public sealed class DreamOverlaysList(DreamObjectDefinition listDef, DreamObject owner, ServerAppearanceSystem? appearanceSystem, bool isUnderlays) : DreamList(listDef, 0) {
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
     }
@@ -981,6 +995,7 @@ public sealed class DreamVisContentsList : DreamList {
         _atom = atom;
     }
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
     }
@@ -1130,6 +1145,7 @@ public sealed class DreamFilterList(DreamObjectDefinition listDef, DreamObject o
         return new DreamValue(filterObject);
     }
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
     }
@@ -1227,6 +1243,7 @@ public sealed class ClientScreenList(DreamObjectTree objectTree, ServerScreenOve
         return _screenObjects[screenIndex - 1];
     }
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return _screenObjects;
     }
@@ -1294,6 +1311,7 @@ public sealed class ClientImagesList(
         return _imageObjects[imageIndex - 1];
     }
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return _imageObjects;
     }
@@ -1357,6 +1375,7 @@ public sealed class WorldContentsList(DreamObjectDefinition listDef, AtomManager
         return new DreamValue(element);
     }
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
     }
@@ -1399,6 +1418,7 @@ public sealed class TurfContentsList(DreamObjectDefinition listDef, DreamObjectT
         return new DreamValue(Cell.Movables[index - 1]);
     }
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
     }
@@ -1471,6 +1491,7 @@ public sealed class AreaContentsList(DreamObjectDefinition listDef, DreamObjectA
         throw new Exception($"Out of bounds index on turf contents list: {key}");
     }
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
     }
@@ -1545,6 +1566,7 @@ public sealed class MovableContentsList(DreamObjectDefinition listDef, DreamObje
         throw new Exception($"Out of bounds index on movable contents list after iterating: {key}");
     }
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
     }
@@ -1626,6 +1648,7 @@ internal sealed class ProcArgsList(DreamObjectDefinition listDef, ProcState stat
         return state.GetArguments()[index - 1];
     }
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
     }
@@ -1679,6 +1702,7 @@ public sealed class SavefileDirList(DreamObjectDefinition listDef, DreamObjectSa
         return value.TryGetValueAsString(out var str) && backedSaveFile.CurrentDir.ContainsKey(str);
     }
 
+    [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
     }

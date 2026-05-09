@@ -13,7 +13,7 @@ namespace OpenDreamRuntime.Procs {
         TreeEntry owningType,
         string name,
         List<string> argumentNames,
-        Dictionary<string, DreamValue> defaultArgumentValues,
+        Dictionary<string, DreamValue>? defaultArgumentValues,
         Func<AsyncNativeProc.AsyncNativeProcState, Task<DreamValue>> taskFunc)
         : DreamProc(id, owningType, name, null, ProcAttributes.None, argumentNames, null, null, null, null, null, 0) {
         /// <summary>
@@ -37,7 +37,7 @@ namespace OpenDreamRuntime.Procs {
             public override DreamProc? Proc => _proc;
             private AsyncNativeProc? _proc;
 
-            private Func<AsyncNativeProcState, Task<DreamValue>> _taskFunc;
+            private Func<AsyncNativeProcState, Task<DreamValue>> _taskFunc = null!;
             private Task? _task;
 
             private ProcState? _callProcNotify;
@@ -157,7 +157,7 @@ namespace OpenDreamRuntime.Procs {
                     _callTcs = null;
                     _callResult = null;
 
-                    callTcs.SetResult(callResult);
+                    callTcs?.SetResult(callResult);
                 }
 
                 // Otherwise, we are still pending

@@ -12,7 +12,7 @@ internal sealed partial class ControlButton(ControlDescriptor controlDescriptor,
     [Dependency] private IResourceCache _resCache = default!;
     public const string StyleClassDMFButton = "DMFbutton";
 
-    private Button _button;
+    private Button _button = default!;
 
     protected override Control CreateUIElement() {
         _button = new Button() {

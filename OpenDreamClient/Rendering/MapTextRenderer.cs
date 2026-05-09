@@ -72,15 +72,17 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
             return node.Value.StringValue ?? "";
 
         //Skip the node if there is no markup tag for it.
-        if (!tagManager.TryGetMarkupTag(node.Name, null, out var tag))
+        if (!tagManager.TryGetMarkupTagHandler(node.Name, null, out var tag))
             return "";
 
         if (!node.Closing) {
             tag.PushDrawContext(node, context);
+            context.Tags.Add(tag);
             return tag.TextBefore(node);
         }
 
         tag.PopDrawContext(node, context);
+        context.Tags.Remove(tag);
         return tag.TextAfter(node);
     }
 

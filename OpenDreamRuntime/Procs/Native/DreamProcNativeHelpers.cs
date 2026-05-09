@@ -1,5 +1,6 @@
 using OpenDreamRuntime.Objects;
 using OpenDreamShared.Dream;
+using System.Linq;
 using System.Text.RegularExpressions;
 using OpenDreamRuntime.Objects.Types;
 using System.Text;
@@ -359,7 +360,7 @@ internal static partial class DreamProcNativeHelpers {
     /// <returns>True if the list was successfully parsed, false if not.</returns>
     public static bool TryParseColorMatrix(DreamList list, out ColorMatrix matrix) {
         matrix = ColorMatrix.Identity;
-        var listArray = list.GetValues();
+        var listArray = list.EnumerateValues().ToList();
         try {
             switch (list.GetLength()) {
                 case 0:
@@ -434,7 +435,7 @@ internal static partial class DreamProcNativeHelpers {
     /// It's a very BYONDish converter. Probably, you don't want to reuse it somewhere aside from the text2num implementation
     /// </remarks>
     public static double? StringToDouble(ReadOnlySpan<char> value, int radix) {
-        if (value == null || value.IsEmpty)
+        if (value.IsEmpty)
             return null;
 
         if (radix < 2 || radix > 36)

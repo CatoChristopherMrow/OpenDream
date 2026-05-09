@@ -30,7 +30,7 @@ namespace OpenDreamRuntime.Procs.Native {
             }
 
             int next = GetNext(src!, bundle.GetArgument(1, "start"), dreamRegex.IsGlobal, haystackString);
-            int end = bundle.GetArgument(2, "end").GetValueAsInteger();
+            int end = bundle.GetArgument(2, "end").TryGetValueAsInteger(out var endValue) ? endValue : 0;
 
             dreamRegex.SetVariable("text", haystack);
 
@@ -82,7 +82,7 @@ namespace OpenDreamRuntime.Procs.Native {
                     // TODO: src is the regex string
                     // TODO: We need to add this to our current thread instead of spawning a new one
                     // TODO: This call needs to immediately die upon sleeping
-                    using var result = proc.Spawn(null, new(args));
+                    using var result = proc.Spawn(regexInstance, new DreamProcArguments(args));
 
                     var replacement = result.Stringify();
                     currentHaystack = regex.Regex.Replace(currentHaystack, replacement, 1, currentStart);
@@ -139,10 +139,10 @@ namespace OpenDreamRuntime.Procs.Native {
         private static DreamValue NativeProc_ReplaceImpl(NativeProc.Bundle bundle, DreamObject? src) {
             DreamValue haystack = bundle.GetArgument(0, "haystack");
             DreamValue replacement = bundle.GetArgument(1, "replacement");
-            int start = bundle.GetArgument(2, "start").GetValueAsInteger();
-            int end = bundle.GetArgument(3, "end").GetValueAsInteger();
+            int start = bundle.GetArgument(2, "start").TryGetValueAsInteger(out var startValue) ? startValue : 1;
+            int end = bundle.GetArgument(3, "end").TryGetValueAsInteger(out var endValue) ? endValue : 0;
 
-            return RegexReplace(src, haystack, replacement, start, end);
+            return RegexReplace(src!, haystack, replacement, start, end);
         }
 
         private static int GetNext(DreamObject regexInstance, DreamValue startParam, bool isGlobal, string haystackString) {
@@ -151,12 +151,12 @@ namespace OpenDreamRuntime.Procs.Native {
                 if (isGlobal && textVar.TryGetValueAsString(out string? lastHaystack) && lastHaystack == haystackString) {
                     using var nextVar = regexInstance.GetVariable("next");
 
-                    return (!nextVar.IsNull) ? nextVar.GetValueAsInteger() : 1;
+                    return nextVar.TryGetValueAsInteger(out var next) ? next : 1;
                 } else {
                     return 1;
                 }
             } else {
-                return startParam.GetValueAsInteger();
+                return startParam.TryGetValueAsInteger(out var start) ? start : 1;
             }
         }
     }

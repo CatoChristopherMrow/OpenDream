@@ -13,7 +13,7 @@ using Robust.Shared.Input;
 namespace OpenDreamClient.Interface.Controls;
 
 public sealed partial class ControlMap(ControlDescriptor controlDescriptor, ControlWindow window) : InterfaceControl(controlDescriptor, window) {
-    public ScalingViewport Viewport { get; private set; }
+    public ScalingViewport Viewport { get; private set; } = default!;
 
     [Dependency] private IEntitySystemManager _entitySystemManager = default!;
     private MouseInputSystem? _mouseInput;

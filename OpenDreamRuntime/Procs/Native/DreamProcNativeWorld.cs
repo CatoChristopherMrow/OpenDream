@@ -90,7 +90,7 @@ internal static class DreamProcNativeWorld {
         bundle.GetArgument(0, "config_set").TryGetValueAsString(out var configSetArg);
         var param = bundle.GetArgument(1, "param");
 
-        ProcessConfigSet(configSetArg, out _, out var configSet);
+        ProcessConfigSet(configSetArg ?? string.Empty, out _, out var configSet);
 
         switch (configSet) {
             case "env":
@@ -194,10 +194,13 @@ internal static class DreamProcNativeWorld {
         bundle.GetArgument(1, "param").TryGetValueAsString(out var param);
         var value = bundle.GetArgument(2, "value");
 
-        ProcessConfigSet(configSetArg, out _, out var configSet);
+        ProcessConfigSet(configSetArg ?? string.Empty, out _, out var configSet);
 
         switch (configSet) {
             case "env":
+                if (param == null)
+                    return DreamValue.Null;
+
                 value.TryGetValueAsString(out var valueString);
                 Environment.SetEnvironmentVariable(param, valueString);
                 break;

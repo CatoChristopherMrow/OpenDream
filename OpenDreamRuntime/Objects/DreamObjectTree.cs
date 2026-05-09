@@ -21,9 +21,9 @@ using MethodImplOptions = System.Runtime.CompilerServices.MethodImplOptions;
 namespace OpenDreamRuntime.Objects;
 
 public sealed partial class DreamObjectTree {
-    public TreeEntry[] Types { get; private set; }
+    public TreeEntry[] Types { get; private set; } = Array.Empty<TreeEntry>();
     public List<DreamProc> Procs { get; } = new();
-    public List<string> Strings { get; private set; } //TODO: Store this somewhere else
+    public List<string> Strings { get; private set; } = new(); //TODO: Store this somewhere else
     public DreamProc? GlobalInitProc { get; private set; }
 
     public TreeEntry Root { get; private set; } = default!;
@@ -564,8 +564,8 @@ public sealed class TreeEntry {
     public readonly string Name;
     public readonly string Path;
     public readonly int Id;
-    public DreamObjectDefinition ObjectDefinition;
-    public TreeEntry ParentEntry;
+    public DreamObjectDefinition ObjectDefinition = default!;
+    public TreeEntry? ParentEntry;
     public List<int>? InheritingTypes;
 
     /// <summary>

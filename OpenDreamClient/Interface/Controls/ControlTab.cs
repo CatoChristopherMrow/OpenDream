@@ -11,7 +11,7 @@ internal sealed class ControlTab(ControlDescriptor controlDescriptor, ControlWin
     : InterfaceControl(controlDescriptor, window) {
     private ControlDescriptorTab TabDescriptor => (ControlDescriptorTab)ElementDescriptor;
 
-    private TabContainer _tab;
+    private TabContainer _tab = default!;
     private readonly List<ControlWindow> _tabs = new();
 
     protected override Control CreateUIElement() {

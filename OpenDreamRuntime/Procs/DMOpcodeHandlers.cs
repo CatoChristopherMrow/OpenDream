@@ -248,9 +248,10 @@ namespace OpenDreamRuntime.Procs {
 
                     if (destination.TryGetValueAsDreamObject<DreamObjectAtom>(out var atom)) {
                         state.Proc.AtomManager.UpdateAppearance(atom, appearance => {
-                            state.Proc.VerbSystem.RegisterVerb(proc);
+                            state.Proc.VerbSystem?.RegisterVerb(proc);
 
-                            appearance.Verbs.Add(proc.VerbId!.Value);
+                            if (proc.VerbId is { } verbId)
+                                appearance.Verbs.Add(verbId);
                         });
                     } else if (destination.TryGetValueAsDreamObject<DreamObjectClient>(out var client)) {
                         client.ClientVerbs.AddValue(val);
@@ -262,6 +263,12 @@ namespace OpenDreamRuntime.Procs {
                 }
             }
 
+            if (objectType == null)
+                ThrowCannotCreateUnknownObject(val);
+
+            if (objectType == null)
+                return ProcStatus.Continue;
+
             var objectDef = objectType.ObjectDefinition;
             var newProc = objectDef.GetProc("New");
             var newArguments = state.PopProcArguments(newProc, argumentInfo);
@@ -270,8 +277,10 @@ namespace OpenDreamRuntime.Procs {
                 // Turfs are special. They're never created outside of map initialization
                 // So instead this will replace an existing turf's type and return that same turf
                 DreamValue loc = newArguments.GetArgument(0);
-                if (!loc.TryGetValueAsDreamObject<DreamObjectTurf>(out var turf))
+                if (!loc.TryGetValueAsDreamObject<DreamObjectTurf>(out var turf) || turf == null) {
                     ThrowInvalidTurfLoc(loc);
+                    return ProcStatus.Continue;
+                }
 
                 state.Proc.DreamMapManager.SetTurf(turf, objectDef, newArguments);
                 if (overrides is not null) {
@@ -625,7 +634,7 @@ namespace OpenDreamRuntime.Procs {
                                 formattedString.Remove(lastIdx, interpString.Length);
                                 formattedString.Append("0th");
                             }
-                        } else if (interp.TryGetValueAsDreamObject(out var interpObj)) {
+                        } else if (interp.TryGetValueAsDreamObject(out var interpObj) && interpObj != null) {
                             var typeStr = interpObj.ObjectDefinition.Type;
                             var lastIdx = formattedString.ToString().LastIndexOf(typeStr);
                             if (lastIdx != -1) { // Can this even fail?
@@ -760,7 +769,7 @@ namespace OpenDreamRuntime.Procs {
             using var value = state.Pop();
 
             if (listValue.TryGetValueAsDreamObject(out var listObject) && listObject != null) {
-                IDreamList list;
+                IDreamList? list;
                 switch (listObject) {
                     case DreamObjectAtom or DreamObjectWorld:
                         using (var contents = listObject.GetVariable("contents"))
@@ -1650,7 +1659,7 @@ namespace OpenDreamRuntime.Procs {
             DreamReference procRef = state.ReadReference();
             var argumentInfo = state.ReadProcArguments();
 
-            DreamObject instance;
+            DreamObject? instance;
             DreamProc proc;
             switch (procRef.Type) {
                 case DMReference.Type.Self: {
@@ -1660,13 +1669,13 @@ namespace OpenDreamRuntime.Procs {
                 }
                 case DMReference.Type.SuperProc: {
                     instance = state.Instance;
-                    proc = state.Proc.SuperProc;
-
-                    if (proc == null) {
+                    if (state.Proc.SuperProc is not { } superProc) {
                         //Attempting to call a super proc where there is none will just return null
                         state.Push(DreamValue.Null);
                         return ProcStatus.Continue;
                     }
+
+                    proc = superProc;
 
                     break;
                 }
@@ -1678,8 +1687,14 @@ namespace OpenDreamRuntime.Procs {
                 }
                 case DMReference.Type.SrcProc: {
                     instance = state.Instance;
-                    if (!instance.TryGetProc(state.ResolveString(procRef.Value), out proc))
-                        throw new Exception($"Type {instance.ObjectDefinition.Type} has no proc called \"{state.ResolveString(procRef.Value)}\"");
+                    if (instance == null)
+                        throw new Exception("Cannot call src proc without an instance");
+
+                    var procName = state.ResolveString(procRef.Value) ?? string.Empty;
+                    if (!instance.TryGetProc(procName, out var srcProc) || srcProc == null)
+                        throw new Exception($"Type {instance.ObjectDefinition.Type} has no proc called \"{procName}\"");
+
+                    proc = srcProc;
 
                     break;
                 }
@@ -2101,7 +2116,7 @@ namespace OpenDreamRuntime.Procs {
                 if (!argListStack.TryGetValueAsDreamList(out var argList))
                     throw new Exception("Invalid gradient() arguments");
 
-                var argListValues = argList.GetValues();
+                var argListValues = argList.EnumerateValues().ToList();
 
                 gradientValues.EnsureCapacity(argListValues.Count - 1);
                 for (int i = 0; i < argListValues.Count; i++) {
@@ -2391,7 +2406,7 @@ namespace OpenDreamRuntime.Procs {
                     return ProcStatus.Continue;
                 }
 
-                foreach (DreamValue containerItem in containerList.GetValues()) {
+                foreach (DreamValue containerItem in containerList.EnumerateValues()) {
                     DreamObjectDefinition itemDef;
                     if (containerItem.TryGetValueAsType(out var type)) {
                         itemDef = type.ObjectDefinition;
@@ -2437,7 +2452,7 @@ namespace OpenDreamRuntime.Procs {
                 values[i] = (value, totalWeight);
             }
 
-            double pick = state.DreamManager.Random.NextDouble() * totalWeight;
+            double pick = state.DreamManager.Random.NextFloat() * totalWeight;
             for (int i = 0; i < values.Length; i++) {
                 if (pick < values[i].CumulativeWeight) {
                     state.Push(values[i].Value);
@@ -2456,7 +2471,7 @@ namespace OpenDreamRuntime.Procs {
 
                 List<DreamValue> values;
                 if (value.TryGetValueAsDreamList(out var list)) {
-                    values = list.GetValues();
+                    values = list.EnumerateValues().ToList();
                 } else {
                     state.Push(value);
                     return ProcStatus.Continue;
@@ -2506,15 +2521,15 @@ namespace OpenDreamRuntime.Procs {
                 throw new Exception($"Invalid var for issaved() call: {key}");
             }
 
-            if (owner.TryGetValueAsDreamObject(out DreamObject dreamObject)) {
+            if (owner.TryGetValueAsDreamObject(out DreamObject? dreamObject) && dreamObject != null) {
                 state.Push(dreamObject.IsSaved(property) ? DreamValue.True : DreamValue.False);
                 return ProcStatus.Continue;
             }
 
             DreamObjectDefinition objectDefinition;
-            if (owner.TryGetValueAsDreamObject(out var dreamObject2)) {
+            if (owner.TryGetValueAsDreamObject(out var dreamObject2) && dreamObject2 != null) {
                 objectDefinition = dreamObject2.ObjectDefinition;
-            } else if (owner.TryGetValueAsType(out var type)) {
+            } else if (owner.TryGetValueAsType(out var type) && type != null) {
                 objectDefinition = type.ObjectDefinition;
             } else {
                 throw new Exception($"Invalid owner for issaved() call {owner}");
@@ -2673,7 +2688,7 @@ namespace OpenDreamRuntime.Procs {
                 throw new Exception("Invalid browse_rsc() recipient");
             }
 
-            connection?.BrowseResource(file, filename.IsNull ? Path.GetFileName(file.ResourcePath) : filename.GetValueAsString());
+            connection?.BrowseResource(file, filename.TryGetValueAsString(out var resourceFileName) ? resourceFileName : Path.GetFileName(file.ResourcePath) ?? string.Empty);
             return ProcStatus.Continue;
         }
 
@@ -2694,7 +2709,8 @@ namespace OpenDreamRuntime.Procs {
             using var controlStack = state.Pop();
             using var messageStack = state.Pop();
             using var receiverStack = state.Pop();
-            string control = controlStack.GetValueAsString();
+            controlStack.TryGetValueAsString(out var control);
+            control ??= string.Empty;
             string message = messageStack.Stringify();
             if (!receiverStack.TryGetValueAsDreamObject<DreamObject>(out var receiver))
                 return ProcStatus.Continue;
@@ -2712,7 +2728,7 @@ namespace OpenDreamRuntime.Procs {
                 }
             } else if (receiver is DreamList list) {
                 // Output to every mob in the left-hand list.
-                foreach (var entry in list.GetValues()) {
+                foreach (var entry in list.EnumerateValues()) {
                     if (entry.TryGetValueAsDreamObject(out var entryObj)) {
                         if (entryObj is DreamObjectMob entryMob) {
                             entryMob.Connection?.OutputControl(message, control);
@@ -2830,7 +2846,7 @@ namespace OpenDreamRuntime.Procs {
             if (!name.TryGetValueAsString(out var suggestedName))
                 suggestedName = Path.GetFileName(resource.ResourcePath) ?? string.Empty;
 
-            connection.SendFile(resource, suggestedName);
+            connection?.SendFile(resource, suggestedName);
             return ProcStatus.Continue;
         }
 
@@ -2968,7 +2984,7 @@ namespace OpenDreamRuntime.Procs {
                         case DreamValue.DreamValueType.ModifiedDreamType:
                             second.TryGetValueAsModifiedType(out DreamModifiedType? secondValue);
                             return firstValue!.Equals(secondValue);
-                        case DreamValue.DreamValueType.DreamType: return firstValue.Type.Equals(second.MustGetValueAsType());
+                        case DreamValue.DreamValueType.DreamType: return firstValue?.Type.Equals(second.MustGetValueAsType()) == true;
                         case DreamValue.DreamValueType.Float:
                         case DreamValue.DreamValueType.DreamObject:
                         case DreamValue.DreamValueType.String: return false;
@@ -3060,19 +3076,19 @@ namespace OpenDreamRuntime.Procs {
                 List<DreamValue> values;
 
                 if (second.TryGetValueAsDreamList(out var secondList)) {
-                    values = secondList.GetValues();
+                    values = secondList.EnumerateValues().ToList();
                 } else {
                     values = new List<DreamValue> { second };
                 }
 
                 foreach (DreamValue value in values) {
                     bool inFirstList = list.ContainsValue(value);
-                    bool inSecondList = secondList.ContainsValue(value);
+                    bool inSecondList = secondList?.ContainsValue(value) == true;
 
                     if (inFirstList ^ inSecondList) {
                         newList.AddValue(value);
 
-                        using var associatedValue = inFirstList ? list.GetValue(value) : secondList.GetValue(value);
+                        using var associatedValue = inFirstList ? list.GetValue(value) : secondList?.GetValue(value) ?? DreamValue.Null;
                         if (!associatedValue.IsNull) newList.SetValue(value, associatedValue);
                     }
                 }
@@ -3121,7 +3137,7 @@ namespace OpenDreamRuntime.Procs {
                 if (!gradientValues[0].TryGetValueAsDreamList(out var gradientList))
                     throw new Exception("Invalid gradient() values; expected either a list or at least 2 values");
 
-                gradientValues = gradientList.GetValues();
+                gradientValues = gradientList.EnumerateValues().ToList();
             }
 
             if (!indexValue.TryGetValueAsFloat(out float index))

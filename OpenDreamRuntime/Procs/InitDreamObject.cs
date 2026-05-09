@@ -30,7 +30,7 @@ internal sealed class InitDreamObjectState(DreamManager dreamManager, DreamObjec
         _stage = Stage.Init;
     }
 
-    private DreamObject _dreamObject;
+    private DreamObject _dreamObject = default!;
     private DreamObject? _usr;
     private readonly DreamValue[] _arguments = new DreamValue[256];
     private int _argumentCount;
