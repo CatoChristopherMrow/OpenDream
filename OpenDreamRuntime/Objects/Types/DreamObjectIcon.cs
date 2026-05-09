@@ -1,7 +1,6 @@
 ﻿using System.Collections.Generic;
 using OpenDreamRuntime.Procs;
 using OpenDreamShared.Dream;
-using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using Color = Robust.Shared.Maths.Color;

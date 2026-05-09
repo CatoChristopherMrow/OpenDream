@@ -1,10 +1,12 @@
 ﻿using OpenDreamShared;
 using OpenDreamShared.Network.Messages;
 using OpenDreamClient.Resources.ResourceTypes;
+using Robust.Client.Graphics;
 using Robust.Shared.Configuration;
 using Robust.Shared.ContentPack;
 using Robust.Shared.Network;
 using Robust.Shared.Utility;
+using Robust.Shared.Asynchronous;
 using System.Linq;
 using SpaceWizards.Sodium;
 
@@ -40,6 +42,8 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
     [Dependency] private IClientNetManager _netManager = default!;
     [Dependency] private IDynamicTypeFactory _typeFactory = default!;
     [Dependency] private IConfigurationManager _cfg = default!;
+    [Dependency] private IClyde _clyde = default!;
+    [Dependency] private ITaskManager _taskManager = default!;
 
     private ResPath _cacheDirectory;
 
@@ -212,8 +216,11 @@ internal sealed partial class DreamResourceManager : IDreamResourceManager {
     }
 
     private DreamResource LoadResourceFromData(Type resourceType, int resourceId, byte[] data) {
-        var resource = (DreamResource)_typeFactory.CreateInstance(resourceType,
-            new object[] { resourceId, data });
+        object[] args = resourceType == typeof(DMIResource)
+            ? new object[] { resourceId, data, _clyde, _taskManager }
+            : new object[] { resourceId, data };
+
+        var resource = (DreamResource)_typeFactory.CreateInstance(resourceType, args);
 
         _resourceCache[resourceId] = resource;
         return resource;

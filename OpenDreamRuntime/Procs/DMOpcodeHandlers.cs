@@ -231,8 +231,7 @@ namespace OpenDreamRuntime.Procs {
 
             TreeEntry? objectType;
             if (val.TryGetValueAsModifiedType(out var modifiedType)) {
-                if (overrides is null)
-                    overrides = JsonSerializer.Deserialize<Dictionary<string, object?>>(modifiedType.VariableOverridesJson);
+                overrides ??= JsonSerializer.Deserialize<Dictionary<string, object?>>(modifiedType.VariableOverridesJson);
 
                 objectType = modifiedType.Type;
             } else if (!val.TryGetValueAsType(out objectType)) {
@@ -684,7 +683,7 @@ namespace OpenDreamRuntime.Procs {
         }
 
         private static string StringifyForInterpolation(DreamValue value, DMProcState state) {
-            if (!value.TryGetValueAsDreamObject<DreamObject>(out var dreamObject) || dreamObject is null)
+            if (!value.TryGetValueAsDreamObject<DreamObject>(out var dreamObject))
                 return value.Stringify();
 
             if (!dreamObject.TryOperatorStringify(state, out var operatorResult))

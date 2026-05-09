@@ -1,7 +1,9 @@
 ﻿using System.IO;
+using System.Threading.Tasks;
 using OpenDreamShared.Dream;
 using OpenDreamShared.Resources;
 using Robust.Client.Graphics;
+using Robust.Shared.Asynchronous;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
@@ -13,9 +15,13 @@ public sealed class DMIResource : DreamResource {
     public Vector2i IconSize;
     public DMIParser.ParsedDMIDescription Description;
 
+    private readonly IClyde _clyde;
+    private readonly ITaskManager _taskManager;
     private readonly Dictionary<string, State> _states;
 
-    public DMIResource(int id, byte[] data) : base(id, data) {
+    public DMIResource(int id, byte[] data, IClyde clyde, ITaskManager taskManager) : base(id, data) {
+        _clyde = clyde;
+        _taskManager = taskManager;
         _states = new Dictionary<string, State>();
         ProcessDMIData();
     }
@@ -32,16 +38,34 @@ public sealed class DMIResource : DreamResource {
         dmiStream.Seek(0, SeekOrigin.Begin);
 
         Image<Rgba32> image = Image.Load<Rgba32>(dmiStream);
-        Texture = IoCManager.Resolve<IClyde>().LoadTextureFromImage(image, name: $"DMI Resource #{Id}");
+        LoadTextureOnMainThread(image, description);
+    }
+
+    private void FinalizeDMIData(Image<Rgba32> image, DMIParser.ParsedDMIDescription description) {
+        Texture = _clyde.LoadTextureFromImage(image, name: $"DMI Resource #{Id}");
         IconSize = new Vector2i(description.Width, description.Height);
         Description = description;
-
         _states.Clear();
         foreach (DMIParser.ParsedDMIState parsedState in description.States.Values) {
             State state = new State(Texture, parsedState, description.Width, description.Height);
 
             _states.Add(parsedState.Name, state);
         }
+    }
+
+    private void LoadTextureOnMainThread(Image<Rgba32> image, DMIParser.ParsedDMIDescription description) {
+        TaskCompletionSource finished = new();
+
+        _taskManager.RunOnMainThread(() => {
+            try {
+                FinalizeDMIData(image, description);
+                finished.SetResult();
+            } catch (Exception e) {
+                finished.SetException(e);
+            }
+        });
+
+        finished.Task.Wait();
     }
 
     public State? GetState(string? stateName) {
