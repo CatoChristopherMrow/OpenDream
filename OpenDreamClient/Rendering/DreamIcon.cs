@@ -631,7 +631,7 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
                 LastInSequence == other.LastInSequence &&
                 Tag == other.Tag &&
                 Command == other.Command &&
-                CommandRunner == other.CommandRunner;
+                ReferenceEquals(CommandRunner, other.CommandRunner);
         }
 
         public override bool Equals(object? obj) {
