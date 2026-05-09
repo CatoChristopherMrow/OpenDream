@@ -1,6 +1,7 @@
 ﻿using System.IO;
 using System.Text;
 using System.Globalization;
+using System.Net;
 using System.Threading.Tasks;
 using OpenDreamShared.Network.Messages;
 using OpenDreamClient.Interface.Controls;
@@ -556,6 +557,24 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
         }
     }
 
+    private void HandleBrowserOptions(string options) {
+        foreach (string rawOption in WebUtility.UrlDecode(options).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
+            string option = rawOption.TrimStart('+', '-');
+
+            switch (option) {
+                // CEF already has page storage for the local browser origin, and OpenDream renders browser
+                // chrome through its own controls instead of BYOND's browser toolbar.
+                case "byondstorage":
+                case "find":
+                case "refresh":
+                    break;
+                default:
+                    _sawmill.Error($"Unsupported browser-options winset \"{options}\"");
+                    return;
+            }
+        }
+    }
+
     public void RunCommand(string fullCommand, bool repeating = false) {
         switch (fullCommand) {
             case not null when fullCommand.StartsWith(".quit"):
@@ -780,9 +799,7 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
                     if (winSet.Attribute == "command") {
                         RunCommand(HandleEmbeddedWinget(controlId, winSet.Value, out _));
                     } else if (winSet.Attribute == "browser-options") {
-                        // BYOND exposes this as a browser-wide setting. Robust's WebView backend handles storage
-                        // differently, so this is currently a safe no-op.
-                        _sawmill.Error($"Unsupported browser-options winset \"{winSet.Value}\"");
+                        HandleBrowserOptions(winSet.Value);
                     } else {
                         _sawmill.Error($"Invalid global winset \"{winsetParams}\"");
                     }
