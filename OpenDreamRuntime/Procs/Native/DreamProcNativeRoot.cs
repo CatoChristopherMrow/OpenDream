@@ -1611,6 +1611,18 @@ internal static class DreamProcNativeRoot {
         return new DreamValue(List2Params(list));
     }
 
+    [DreamProc("load_ext")]
+    [DreamProcParameter("LibName", Type = DreamValueTypeFlag.String)]
+    [DreamProcParameter("FuncName", Type = DreamValueTypeFlag.String)]
+    public static DreamValue NativeProc_load_ext(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        var library = DMOpcodeHandlers.NormalizeExternalLibraryName(bundle.GetArgument(0, "LibName").MustGetValueAsString());
+        var function = bundle.GetArgument(1, "FuncName").MustGetValueAsString();
+
+        DMOpcodeHandlers.ResolveExternalFunction(bundle.ResourceManager, library, function);
+
+        return new DreamValue(new DreamObjectExternalProc(bundle.ObjectTree.Root.ObjectDefinition, library, function));
+    }
+
     [DreamProc("lowertext")]
     [DreamProcParameter("T", Type = DreamValueTypeFlag.String)]
     public static DreamValue NativeProc_lowertext(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {

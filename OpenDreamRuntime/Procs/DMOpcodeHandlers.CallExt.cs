@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 using JetBrains.Annotations;
+using OpenDreamRuntime.Objects.Types;
+using OpenDreamRuntime.Resources;
 using Api = OpenDreamRuntime.ByondApi.ByondApi;
 
 namespace OpenDreamRuntime.Procs;
@@ -19,16 +21,37 @@ internal static partial class DMOpcodeHandlers {
 
         DreamProcArguments arguments = state.PopProcArguments(null, argumentsInfo);
 
-        // If we're on linux, we use a .so instead of a .dll
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && dllName.EndsWith(".dll")) {
-            dllName = dllName[..^"dll".Length] + "so";
-        }
+        dllName = NormalizeExternalLibraryName(dllName);
 
         if (procName.StartsWith("byond:")) {
             return CallExtByond(state, dllName, procName, arguments);
         } else {
             return CallExtString(state, dllName, procName, arguments);
         }
+    }
+
+    public static string NormalizeExternalLibraryName(string dllName) {
+        // If we're on linux, we use a .so instead of a .dll
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && dllName.EndsWith(".dll")) {
+            dllName = dllName[..^"dll".Length] + "so";
+        }
+
+        return dllName;
+    }
+
+    public static unsafe void ResolveExternalFunction(DreamResourceManager resourceManager, string dllName, string procName) {
+        _ = procName.StartsWith("byond:")
+            ? DllHelper.ResolveDllTarget(resourceManager, dllName, procName["byond:".Length..])
+            : DllHelper.ResolveDllTarget(resourceManager, dllName, procName);
+    }
+
+    private static ProcStatus CallExtLoaded(
+        DMProcState state,
+        DreamObjectExternalProc externalProc,
+        DreamProcArguments arguments) {
+        return externalProc.Function.StartsWith("byond:")
+            ? CallExtByond(state, externalProc.Library, externalProc.Function, arguments)
+            : CallExtString(state, externalProc.Library, externalProc.Function, arguments);
     }
 
     private static unsafe ProcStatus CallExtByond(

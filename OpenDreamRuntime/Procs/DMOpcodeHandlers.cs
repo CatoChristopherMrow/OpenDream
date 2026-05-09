@@ -1721,6 +1721,12 @@ namespace OpenDreamRuntime.Procs {
             switch (source.Type) {
                 case DreamValue.DreamValueType.DreamObject: {
                     DreamObject? dreamObject = source.MustGetValueAsDreamObject();
+                    if (dreamObject is DreamObjectExternalProc externalProc) {
+                        DreamProcArguments arguments = state.PopProcArguments(null, argumentsInfo);
+
+                        return CallExtLoaded(state, externalProc, arguments);
+                    }
+
                     using var procId = state.Pop();
                     DreamProc? proc = null;
 
@@ -2204,6 +2210,7 @@ namespace OpenDreamRuntime.Procs {
         maptext_width, maptext_height, maptext_x, maptext_y
         luminosity
         pixel_x, pixel_y, pixel_w, pixel_z
+        icon_w, icon_z
         transform
 
         do not animate smoothly:
@@ -2263,10 +2270,18 @@ namespace OpenDreamRuntime.Procs {
                 arguments.TryGetValue("easing", out var easingArg);
                 arguments.TryGetValue("flags", out var flagsArg);
                 arguments.TryGetValue("delay", out var delayArg);
+                arguments.TryGetValue("tag", out var tagArg);
+                arguments.TryGetValue("command", out var commandArg);
                 loopArg.TryGetValueAsInteger(out int loop);
                 easingArg.TryGetValueAsInteger(out int easing);
                 flagsArg.TryGetValueAsInteger(out int flagsInt);
                 delayArg.TryGetValueAsInteger(out int delay);
+                string? tag = null;
+                if (tagArg.TryGetValueAsString(out var tagString) && tagString.Length > 0)
+                    tag = tagString;
+                string? command = null;
+                if (commandArg.TryGetValueAsString(out var commandString) && commandString.Length > 0)
+                    command = commandString;
 
                 if (!timeArg.TryGetValueAsFloat(out float time)) {
                     // A non-number time arg results in the animation happening instantly
@@ -2277,14 +2292,22 @@ namespace OpenDreamRuntime.Procs {
                     throw new ArgumentOutOfRangeException("easing", easing, $"Invalid easing value in animate(): {easing}");
 
                 var flags = (AnimationFlags)flagsInt;
+                if (tag is not null)
+                    flags |= AnimationFlags.AnimationParallel;
                 if ((flags & (AnimationFlags.AnimationParallel | AnimationFlags.AnimationContinue)) != 0)
                     chainAnim = true;
                 if ((flags & AnimationFlags.AnimationEndNow) != 0)
                     chainAnim = false;
 
                 var atomManager = state.Proc.AtomManager;
+                if (tag is not null && !arguments.Any(arg => atomManager.IsValidAppearanceVar(arg.Key))) {
+                    atomManager.StopAppearanceAnimation(obj, tag);
+                    state.Push(DreamValue.Null);
+                    return ProcStatus.Continue;
+                }
+
                 var duration = TimeSpan.FromMilliseconds(time * 100);
-                atomManager.AnimateAppearance(obj, duration, (AnimationEasing)easing, loop, flags, delay, chainAnim, appearance => {
+                atomManager.AnimateAppearance(obj, duration, (AnimationEasing)easing, loop, flags, delay, chainAnim, tag, command, appearance => {
                     bool isRelative = flags.HasFlag(AnimationFlags.AnimationRelative);
 
                     foreach (var arg in arguments) {
@@ -2328,6 +2351,8 @@ namespace OpenDreamRuntime.Procs {
                                 case "pixel_y":
                                 case "pixel_z":
                                 case "pixel_w":
+                                case "icon_z":
+                                case "icon_w":
                                 case "maptext_width":
                                 case "maptext_height":
                                 case "maptext_x":

@@ -37,6 +37,7 @@ public class DreamObjectMovable : DreamObjectAtom {
         Entity = AtomManager.CreateMovableEntity(this);
         SpriteComponent = EntityManager.GetComponent<DMISpriteComponent>(Entity);
         AtomManager.SetSpriteAppearance((Entity, SpriteComponent), AtomManager.GetAppearanceFromDefinition(ObjectDefinition));
+        UpdateSpriteBoundOffset();
 
         _transformComponent = EntityManager.GetComponent<TransformComponent>(Entity);
         _contents = new MovableContentsList(ObjectTree.List.ObjectDefinition, this, _transformComponent);
@@ -161,10 +162,12 @@ public class DreamObjectMovable : DreamObjectAtom {
             case "bound_x":
                 value.TryGetValueAsFloat(out var boundX);
                 _boundX = boundX;
+                UpdateSpriteBoundOffset();
                 break;
             case "bound_y":
                 value.TryGetValueAsFloat(out var boundY);
                 _boundY = boundY;
+                UpdateSpriteBoundOffset();
                 break;
             case "bound_width":
                 value.TryGetValueAsFloat(out var boundWidth);
@@ -256,6 +259,12 @@ public class DreamObjectMovable : DreamObjectAtom {
             default:
                 throw new ArgumentException($"Invalid loc {loc}");
         }
+    }
+
+    private void UpdateSpriteBoundOffset() {
+        var boundX = (int)MathF.Round((float)(_boundX ?? 0));
+        var boundY = (int)MathF.Round((float)(_boundY ?? 0));
+        AtomManager.SetMovableBoundOffset(this, (boundX, boundY));
     }
 
     protected override DreamValue CreatePixLoc() {

@@ -1,5 +1,7 @@
 using NUnit.Framework;
 using OpenDreamShared.Dream;
+using Robust.Shared.Maths;
+using System.Numerics;
 
 namespace Content.Tests;
 
@@ -53,6 +55,37 @@ public sealed class ScreenLocationTests {
             Assert.That(loc.AnchorToScreenBounds, Is.False);
             Assert.That(loc.HorizontalAnchor, Is.EqualTo(HorizontalAnchor.Center));
             Assert.That(loc.VerticalAnchor, Is.EqualTo(VerticalAnchor.Center));
+        });
+    }
+
+    [Test]
+    public void ScreenKeywordsUseExpandedScreenBounds() {
+        var view = new ViewRange(11, 11);
+        var iconSize = new Vector2i(32, 32);
+        ScreenLocation border = new("0,0");
+        ScreenLocation screenSouthwest = new("SCREEN_SOUTHWEST");
+        ScreenLocation normalSouthwest = new("SOUTHWEST");
+
+        ScreenLocationBounds bounds = new ScreenLocationBounds(0, 0, view.Width, view.Height)
+            .Include(border.GetScreenBounds(view, 32, iconSize));
+
+        Assert.Multiple(() => {
+            Assert.That(border.GetViewPosition(Vector2.Zero, view, 32, iconSize), Is.EqualTo(new Vector2(-1, -1)));
+            Assert.That(screenSouthwest.GetViewPosition(Vector2.Zero, view, 32, iconSize, bounds), Is.EqualTo(new Vector2(-1, -1)));
+            Assert.That(normalSouthwest.GetViewPosition(Vector2.Zero, view, 32, iconSize, bounds), Is.EqualTo(Vector2.Zero));
+        });
+    }
+
+    [Test]
+    public void ScreenKeywordsUseNormalBoundsWithoutBorderObjects() {
+        var view = new ViewRange(11, 11);
+        var iconSize = new Vector2i(32, 32);
+        ScreenLocation screenNortheast = new("SCREEN_NORTHEAST");
+        ScreenLocation screenRight = new("SCREEN_RIGHT");
+
+        Assert.Multiple(() => {
+            Assert.That(screenNortheast.GetViewPosition(Vector2.Zero, view, 32, iconSize), Is.EqualTo(new Vector2(10, 10)));
+            Assert.That(screenRight.GetViewPosition(Vector2.Zero, view, 32, new Vector2i(64, 32)), Is.EqualTo(new Vector2(9, 5)));
         });
     }
 }

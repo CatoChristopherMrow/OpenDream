@@ -192,14 +192,28 @@ internal sealed partial class DreamViewOverlay : Overlay {
     }
 
     //handles underlays, overlays, appearance flags, images. Adds them to the result list, so they can be sorted and drawn with DrawIcon()
-    private void ProcessIconComponents(DreamIcon icon, Vector2 position, EntityUid uid, bool isScreen, ref int tieBreaker, List<RendererMetaData> result, sbyte seeVis, RendererMetaData? parentIcon = null, bool keepTogether = false, Vector3? turfCoords = null, ClientAppearanceSystem.Flick? flick = null) {
+    private void ProcessIconComponents(DreamIcon icon, Vector2 position, EntityUid uid, bool isScreen, ref int tieBreaker, List<RendererMetaData> result, sbyte seeVis, RendererMetaData? parentIcon = null, bool keepTogether = false, Vector3? turfCoords = null, ClientAppearanceSystem.Flick? flick = null, Vector2i boundOffset = default) {
         if (icon.Appearance is null) //in the event that appearance hasn't loaded yet
             return;
 
         result.EnsureCapacity(result.Count + icon.Underlays.Count + icon.Overlays.Count + 1);
         RendererMetaData current = RentRendererMetaData();
         current.MainIcon = icon;
-        current.Position = position + (icon.Appearance.TotalPixelOffset / (float)IconSize);
+        Vector2i iconSize = icon.DMI?.IconSize ?? new Vector2i(IconSize, IconSize);
+        Vector2i pixelOffset = AppearancePositioning.GetPixelOffset(
+            icon.Appearance,
+            _interfaceManager.MapFormat,
+            iconSize,
+            boundOffset,
+            parentIcon == null && !isScreen);
+
+        current.Position = position + (pixelOffset / (float)IconSize);
+        current.MapFormat = _interfaceManager.MapFormat;
+        current.SortPosition = parentIcon?.SortPosition ?? position;
+
+        if (parentIcon == null && !isScreen && _interfaceManager.MapFormat != MapFormat.TopDown)
+            current.SortPosition += boundOffset / (float)IconSize;
+
         current.Uid = uid;
         current.ClickUid = uid;
         current.IsScreen = isScreen;
@@ -283,6 +297,8 @@ internal sealed partial class DreamViewOverlay : Overlay {
             renderTargetPlaceholder.TieBreaker = current.TieBreaker;
             renderTargetPlaceholder.Plane = current.Plane;
             renderTargetPlaceholder.Layer = current.Layer;
+            renderTargetPlaceholder.SortPosition = current.SortPosition;
+            renderTargetPlaceholder.MapFormat = current.MapFormat;
             renderTargetPlaceholder.RenderSource = current.RenderTarget;
             renderTargetPlaceholder.MouseOpacity = current.MouseOpacity;
             renderTargetPlaceholder.AppearanceFlags = current.AppearanceFlags;
@@ -344,7 +360,7 @@ internal sealed partial class DreamViewOverlay : Overlay {
                     continue;
                 if(sprite.Icon.Appearance.Override) {
                     current.MainIcon = sprite.Icon;
-                    current.Position += (sprite.Icon.Appearance.TotalPixelOffset / (float)IconSize);
+                    current.Position += (sprite.Icon.Appearance.GetTotalPixelOffset(_interfaceManager.MapFormat) / (float)IconSize);
                 } else
                     ProcessIconComponents(sprite.Icon, current.Position, uid, isScreen, ref tieBreaker, result, seeVis, current);
             }
@@ -375,6 +391,8 @@ internal sealed partial class DreamViewOverlay : Overlay {
             maptext.TieBreaker = tieBreaker;
             maptext.Plane = current.Plane;
             maptext.Layer = current.Layer;
+            maptext.SortPosition = current.SortPosition;
+            maptext.MapFormat = current.MapFormat;
             maptext.RenderSource = null;
             maptext.RenderTarget = null;
             maptext.MouseOpacity = current.MouseOpacity;
@@ -674,13 +692,16 @@ internal sealed partial class DreamViewOverlay : Overlay {
                 var flick = _appearanceSystem.GetMovableFlick(entity);
 
                 tValue = 0;
-                ProcessIconComponents(sprite.Icon, worldPos - new Vector2(0.5f), entity, false, ref tValue, _spriteContainer, seeVis, flick: flick);
+                ProcessIconComponents(sprite.Icon, worldPos - new Vector2(0.5f), entity, false, ref tValue, _spriteContainer, seeVis, flick: flick, boundOffset: sprite.BoundOffset);
             }
         }
 
         // Screen objects
         if (ScreenOverlayEnabled) {
             using var _ = _prof.Group("screen objects");
+
+            List<(EntityUid Uid, DMISpriteComponent Sprite, ScreenLocation ScreenLocation, Vector2i IconSize)> screenObjects = new();
+            ScreenLocationBounds screenBounds = new(0, 0, _interfaceManager.View.Width, _interfaceManager.View.Height);
 
             foreach (EntityUid uid in _screenOverlaySystem.ScreenObjects) {
                 if (!_entityManager.TryGetComponent(uid, out DMISpriteComponent? sprite) || sprite.ScreenLocation == null)
@@ -690,11 +711,18 @@ internal sealed partial class DreamViewOverlay : Overlay {
                 if (sprite.ScreenLocation.MapControl != null) // Don't render screen objects meant for other map controls
                     continue;
 
+                ScreenLocation screenLocation = sprite.ScreenLocation;
                 Vector2i dmiIconSize = sprite.Icon.DMI?.IconSize ?? new(IconSize, IconSize);
-                Vector2 position = sprite.ScreenLocation.GetViewPosition(worldAABB.BottomLeft, _interfaceManager.View, IconSize, dmiIconSize);
+                screenObjects.Add((uid, sprite, screenLocation, dmiIconSize));
+                if (!screenLocation.AnchorToScreenBounds)
+                    screenBounds = screenBounds.Include(screenLocation.GetScreenBounds(_interfaceManager.View, IconSize, dmiIconSize));
+            }
+
+            foreach ((EntityUid uid, DMISpriteComponent sprite, ScreenLocation screenLocation, Vector2i dmiIconSize) in screenObjects) {
+                Vector2 position = screenLocation.GetViewPosition(worldAABB.BottomLeft, _interfaceManager.View, IconSize, dmiIconSize, screenBounds);
                 Vector2 iconSize = sprite.Icon.DMI == null ? Vector2.Zero : sprite.Icon.DMI.IconSize / (float)IconSize;
-                for (int x = 0; x < sprite.ScreenLocation.RepeatX; x++) {
-                    for (int y = 0; y < sprite.ScreenLocation.RepeatY; y++) {
+                for (int x = 0; x < screenLocation.RepeatX; x++) {
+                    for (int y = 0; y < screenLocation.RepeatY; y++) {
                         tValue = 0;
                         ProcessIconComponents(sprite.Icon, position + iconSize * new Vector2(x, y), uid, true, ref tValue, _spriteContainer, seeVis);
                     }

@@ -330,12 +330,66 @@ public sealed class DreamObjectMatrix(DreamObjectDefinition objectDefinition) : 
     }
 
     public static void InterpolateMatrix(DreamObjectMatrix matrix, DreamObjectMatrix target, float t) {
-        matrix.A += (target.A - matrix.A) * t;
-        matrix.B += (target.B - matrix.B) * t;
+        if (IsInterpolationDegenerate(matrix) || IsInterpolationDegenerate(target)) {
+            matrix.A += (target.A - matrix.A) * t;
+            matrix.B += (target.B - matrix.B) * t;
+            matrix.C += (target.C - matrix.C) * t;
+            matrix.D += (target.D - matrix.D) * t;
+            matrix.E += (target.E - matrix.E) * t;
+            matrix.F += (target.F - matrix.F) * t;
+            return;
+        }
+
+        DecomposeMatrix(matrix, out var scaleX, out var scaleY, out var skew, out var angle);
+        DecomposeMatrix(target, out var targetScaleX, out var targetScaleY, out var targetSkew, out var targetAngle);
+
+        scaleX += (targetScaleX - scaleX) * t;
+        scaleY += (targetScaleY - scaleY) * t;
+        skew += (targetSkew - skew) * t;
+        angle += NormalizeAngle(targetAngle - angle) * t;
+
+        var angleSin = MathF.Sin(angle);
+        var angleCos = MathF.Cos(angle);
+
+        matrix.A = scaleX * angleCos + skew * angleSin;
+        matrix.B = scaleY * angleSin;
         matrix.C += (target.C - matrix.C) * t;
-        matrix.D += (target.D - matrix.D) * t;
-        matrix.E += (target.E - matrix.E) * t;
+        matrix.D = -scaleX * angleSin + skew * angleCos;
+        matrix.E = scaleY * angleCos;
         matrix.F += (target.F - matrix.F) * t;
+    }
+
+    private static bool IsInterpolationDegenerate(DreamObjectMatrix matrix) {
+        return matrix.B == 0f && matrix.E == 0f;
+    }
+
+    private static void DecomposeMatrix(DreamObjectMatrix matrix, out float scaleX, out float scaleY, out float skew, out float angle) {
+        scaleY = MathF.Sqrt(matrix.B * matrix.B + matrix.E * matrix.E);
+
+        if (scaleY == 0f) {
+            angle = 0f;
+            scaleX = matrix.A;
+            skew = matrix.D;
+            return;
+        }
+
+        angle = MathF.Atan2(matrix.B, matrix.E);
+        var angleSin = MathF.Sin(angle);
+        var angleCos = MathF.Cos(angle);
+
+        scaleX = angleCos * matrix.A - angleSin * matrix.D;
+        skew = angleSin * matrix.A + angleCos * matrix.D;
+    }
+
+    private static float NormalizeAngle(float angle) {
+        const float tau = MathF.PI * 2f;
+
+        while (angle > MathF.PI)
+            angle -= tau;
+        while (angle < -MathF.PI)
+            angle += tau;
+
+        return MathF.Abs(angle) == MathF.PI ? 0f : angle;
     }
 
     /// <summary> Adds the second given matrix to the first given matrix. </summary>

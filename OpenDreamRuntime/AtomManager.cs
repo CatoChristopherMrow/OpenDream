@@ -134,6 +134,8 @@ public sealed partial class AtomManager {
             case "pixel_y":
             case "pixel_w":
             case "pixel_z":
+            case "icon_w":
+            case "icon_z":
             case "color":
             case "layer":
             case "invisibility":
@@ -212,6 +214,12 @@ public sealed partial class AtomManager {
                 break;
             case "pixel_z":
                 value.TryGetValueAsInteger(out appearance.PixelOffset2.Y);
+                break;
+            case "icon_w":
+                value.TryGetValueAsInteger(out appearance.IconOffset.X);
+                break;
+            case "icon_z":
+                value.TryGetValueAsInteger(out appearance.IconOffset.Y);
                 break;
             case "color":
                 if(value.TryGetValueAsDreamList(out var list)) {
@@ -385,6 +393,10 @@ public sealed partial class AtomManager {
                 return new(appearance.PixelOffset2.X);
             case "pixel_z":
                 return new(appearance.PixelOffset2.Y);
+            case "icon_w":
+                return new(appearance.IconOffset.X);
+            case "icon_z":
+                return new(appearance.IconOffset.Y);
             case "color":
                 if(!appearance.ColorMatrix.Equals(ColorMatrix.Identity)) {
                     var matrixList = _objectTree.CreateList(20);
@@ -549,6 +561,10 @@ public sealed partial class AtomManager {
         DMISpriteSystem?.SetSpriteScreenLocation(new(movable.Entity, movable.SpriteComponent), screenLocation);
     }
 
+    public void SetMovableBoundOffset(DreamObjectMovable movable, Vector2i boundOffset) {
+        DMISpriteSystem?.SetSpriteBoundOffset(new(movable.Entity, movable.SpriteComponent), boundOffset);
+    }
+
     public void SetSpriteAppearance(Entity<DMISpriteComponent> ent, MutableAppearance appearance) {
         if (DMISpriteSystem != null) {
             DMISpriteSystem.SetSpriteAppearance(ent, appearance);
@@ -557,7 +573,7 @@ public sealed partial class AtomManager {
         }
     }
 
-    public void AnimateAppearance(DreamObject atom, TimeSpan duration, AnimationEasing easing, int loop, AnimationFlags flags, int delay, bool chainAnim, Action<MutableAppearance> animate) {
+    public void AnimateAppearance(DreamObject atom, TimeSpan duration, AnimationEasing easing, int loop, AnimationFlags flags, int delay, bool chainAnim, string? tag, string? command, Action<MutableAppearance> animate) {
         MutableAppearance appearance;
         EntityUid targetEntity;
         DMISpriteComponent? targetComponent = null;
@@ -602,7 +618,32 @@ public sealed partial class AtomManager {
             //fuck knows, this will trigger a bunch of turf updates to? idek
         }
 
-        AppearanceSystem?.Animate(ent, appearance, duration, easing, loop, flags, delay, chainAnim, turfId);
+        string? atomRef = null;
+        if (command is not null) {
+            using var atomValue = new DreamValue(atom);
+            atomRef = _refManager.GetRefString(atomValue);
+        }
+
+        AppearanceSystem?.Animate(ent, appearance, duration, easing, loop, flags, delay, chainAnim, turfId, tag, command, atomRef);
+    }
+
+    public void StopAppearanceAnimation(DreamObject atom, string tag) {
+        NetEntity ent = NetEntity.Invalid;
+        uint? turfId = null;
+
+        if (atom is DreamObjectMovable movable) {
+            ent = _entityManager.GetNetEntity(movable.Entity);
+        } else if (atom is DreamObjectImage { IsMutableAppearance: false } image) {
+            ent = _entityManager.GetNetEntity(image.Entity);
+        } else if (atom is DreamObjectTurf turf) {
+            turfId = turf.Appearance.MustGetId();
+        } else if (atom is DreamObjectArea or DreamObjectClient or DreamObjectFilter) {
+            return;
+        } else {
+            throw new ArgumentException($"Cannot stop appearance animation of {atom}");
+        }
+
+        AppearanceSystem?.StopAnimation(ent, turfId, tag);
     }
 
     public bool TryCreateAppearanceFrom(DreamValue value, [NotNullWhen(true)] out MutableAppearance? appearance) {

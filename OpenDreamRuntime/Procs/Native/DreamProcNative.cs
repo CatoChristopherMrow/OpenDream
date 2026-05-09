@@ -79,6 +79,7 @@ internal static class DreamProcNative {
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_length_char);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_lerp);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_list2params);
+        objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_load_ext);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_lowertext);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_matrix);
         objectTree.SetGlobalNativeProc(DreamProcNativeRoot.NativeProc_max);

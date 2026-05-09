@@ -33,6 +33,7 @@ public sealed class MutableAppearance : IEquatable<MutableAppearance>, IDisposab
     [ViewVariables] public bool InheritsDirection = true; // Inherits direction when used as an overlay
     [ViewVariables] public Vector2i PixelOffset;  // pixel_x and pixel_y
     [ViewVariables] public Vector2i PixelOffset2; // pixel_w and pixel_z
+    [ViewVariables] public Vector2i IconOffset;   // icon_w and icon_z
     [ViewVariables] public Color Color = Color.White;
     [ViewVariables] public byte Alpha = 255;
     [ViewVariables] public float GlideSize;
@@ -124,6 +125,7 @@ public sealed class MutableAppearance : IEquatable<MutableAppearance>, IDisposab
         InheritsDirection = appearance.InheritsDirection;
         PixelOffset = appearance.PixelOffset;
         PixelOffset2 = appearance.PixelOffset2;
+        IconOffset = appearance.IconOffset;
         Color = appearance.Color;
         Alpha = appearance.Alpha;
         GlideSize = appearance.GlideSize;
@@ -173,6 +175,7 @@ public sealed class MutableAppearance : IEquatable<MutableAppearance>, IDisposab
         if (appearance.InheritsDirection != InheritsDirection) return false;
         if (appearance.PixelOffset != PixelOffset) return false;
         if (appearance.PixelOffset2 != PixelOffset2) return false;
+        if (appearance.IconOffset != IconOffset) return false;
         if (appearance.Color != Color) return false;
         if (appearance.Alpha != Alpha) return false;
         if (!appearance.GlideSize.Equals(GlideSize)) return false;
@@ -271,6 +274,7 @@ public sealed class MutableAppearance : IEquatable<MutableAppearance>, IDisposab
         hashCode.Add(InheritsDirection);
         hashCode.Add(PixelOffset);
         hashCode.Add(PixelOffset2);
+        hashCode.Add(IconOffset);
         hashCode.Add(Color);
         hashCode.Add(ColorMatrix);
         hashCode.Add(Layer);
@@ -423,6 +427,7 @@ public enum IconAppearanceProperty : byte {
         DoesntInheritDirection,
         PixelOffset,
         PixelOffset2,
+        IconOffset,
         Color,
         Alpha,
         GlideSize,

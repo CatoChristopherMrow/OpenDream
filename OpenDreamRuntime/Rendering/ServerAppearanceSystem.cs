@@ -128,10 +128,14 @@ public sealed partial class ServerAppearanceSystem : SharedAppearanceSystem {
         }
     }
 
-    public void Animate(NetEntity entity, MutableAppearance targetAppearance, TimeSpan duration, AnimationEasing easing, int loop, AnimationFlags flags, int delay, bool chainAnim, uint? turfId) {
+    public void Animate(NetEntity entity, MutableAppearance targetAppearance, TimeSpan duration, AnimationEasing easing, int loop, AnimationFlags flags, int delay, bool chainAnim, uint? turfId, string? tag, string? command, string? atomRef) {
         uint appearanceId = AddAppearance(targetAppearance).MustGetId();
 
-        RaiseNetworkEvent(new AnimationEvent(entity, appearanceId, duration, easing, loop, flags, delay, chainAnim, turfId));
+        RaiseNetworkEvent(new AnimationEvent(entity, appearanceId, duration, easing, loop, flags, delay, chainAnim, turfId, tag, command, atomRef, stop: false));
+    }
+
+    public void StopAnimation(NetEntity entity, uint? turfId, string tag) {
+        RaiseNetworkEvent(new AnimationEvent(entity, 0, TimeSpan.Zero, default, 0, default, 0, false, turfId, tag, null, null, stop: true));
     }
 
     public void Flick(DreamObjectAtom atom, int iconId, string? iconState) {

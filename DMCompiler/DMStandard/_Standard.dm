@@ -3,7 +3,7 @@
 
 //These procs should be in alphabetical order, as in DreamProcNativeRoot.cs
 proc/alert(Usr = usr, Message, Title, Button1 = "Ok", Button2, Button3) as text
-proc/animate(Object, time, loop, easing, flags, delay, pixel_x, pixel_y, pixel_z, maptext, maptext_width, maptext_height, maptext_x, maptext_y, dir, alpha, transform, color, luminosity, infra_luminosity, layer, glide_size, icon, icon_state, invisibility, suffix) as null
+proc/animate(Object, time, loop, easing, flags, delay, tag, command, pixel_x, pixel_y, pixel_z, pixel_w, icon_w, icon_z, maptext, maptext_width, maptext_height, maptext_x, maptext_y, dir, alpha, transform, color, luminosity, infra_luminosity, layer, glide_size, icon, icon_state, invisibility, suffix) as null
 proc/ascii2text(N) as text
 proc/block(atom/Start, atom/End, StartZ, EndX=Start, EndY=End, EndZ=StartZ) as /list
 proc/bounds_dist(atom/Ref, atom/Target) as num
@@ -66,6 +66,7 @@ proc/json_encode(Value, flags)
 proc/length_char(E) as num
 proc/lerp(A, B, factor)
 proc/list2params(List) as text
+proc/load_ext(LibName, FuncName)
 proc/lowertext(T as text) as text
 proc/max(A) as num|text|null
 proc/md5(T) as text|null

@@ -16,7 +16,7 @@ public sealed partial class DMISpriteSystem : EntitySystem {
             ? _appearance.AddAppearance(component.Appearance).MustGetId()
             : null;
 
-        args.State = new SharedDMISpriteComponent.DMISpriteComponentState(appearanceId, component.ScreenLocation);
+        args.State = new SharedDMISpriteComponent.DMISpriteComponentState(appearanceId, component.ScreenLocation, component.BoundOffset);
     }
 
     public void SetSpriteAppearance(Entity<DMISpriteComponent> ent, MutableAppearance appearance, bool dirty = true) {
@@ -33,6 +33,12 @@ public sealed partial class DMISpriteSystem : EntitySystem {
     public void SetSpriteScreenLocation(Entity<DMISpriteComponent> ent, ScreenLocation screenLocation) {
         DMISpriteComponent component = ent.Comp;
         component.ScreenLocation = screenLocation;
+        Dirty(ent, component);
+    }
+
+    public void SetSpriteBoundOffset(Entity<DMISpriteComponent> ent, Vector2i boundOffset) {
+        DMISpriteComponent component = ent.Comp;
+        component.BoundOffset = boundOffset;
         Dirty(ent, component);
     }
 }

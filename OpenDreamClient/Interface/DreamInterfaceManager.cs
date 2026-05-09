@@ -2,6 +2,7 @@
 using System.Text;
 using System.Globalization;
 using System.Threading.Tasks;
+using OpenDreamClient.Audio;
 using OpenDreamShared.Network.Messages;
 using OpenDreamClient.Interface.Controls;
 using OpenDreamShared.Interface.Descriptors;
@@ -16,6 +17,7 @@ using Robust.Client.Input;
 using Robust.Client.UserInterface;
 using Robust.Client.UserInterface.Controls;
 using Robust.Shared.ContentPack;
+using Robust.Shared.GameObjects;
 using Robust.Shared.Network;
 using Robust.Shared.Random;
 using Robust.Shared.Asynchronous;
@@ -47,6 +49,7 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
     [Dependency] private IUriOpener _uriOpener = default!;
     [Dependency] private IGameController _gameController = default!;
     [Dependency] private ITaskManager _taskManager = default!;
+    [Dependency] private IDreamSoundEngine _soundEngine = default!;
 
     private readonly ISawmill _sawmill = Logger.GetSawmill("opendream.interface");
 
@@ -78,6 +81,7 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
 
     public bool ShowPopupMenus { get; private set; } = true;
     public int IconSize { get; private set; }
+    public MapFormat MapFormat { get; private set; }
 
     private ViewRange _view = new(5);
 
@@ -107,11 +111,23 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
     }
 
     private void SetupBaseDreamBinds() {
-        // Set up the middle-mouse button keybind
-        _inputManager.Contexts.GetContext("common").AddFunction(OpenDreamKeyFunctions.MouseMiddle);
-        _inputManager.RegisterBinding(new KeyBindingRegistration() {
+        // Set up mouse buttons not covered by Robust's default use/right-click bindings
+        var commonContext = _inputManager.Contexts.GetContext("common");
+        commonContext.AddFunction(OpenDreamKeyFunctions.MouseMiddle);
+        commonContext.AddFunction(OpenDreamKeyFunctions.MouseButton4);
+        commonContext.AddFunction(OpenDreamKeyFunctions.MouseButton5);
+
+        _inputManager.RegisterBinding(new KeyBindingRegistration {
             Function = OpenDreamKeyFunctions.MouseMiddle,
             BaseKey = Keyboard.Key.MouseMiddle
+        });
+        _inputManager.RegisterBinding(new KeyBindingRegistration {
+            Function = OpenDreamKeyFunctions.MouseButton4,
+            BaseKey = Keyboard.Key.MouseButton4
+        });
+        _inputManager.RegisterBinding(new KeyBindingRegistration {
+            Function = OpenDreamKeyFunctions.MouseButton5,
+            BaseKey = Keyboard.Key.MouseButton5
         });
     }
 
@@ -424,15 +440,17 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
     private void RxUpdateClientInfo(MsgUpdateClientInfo msg) {
         var iconSize = msg.IconSize;
         var view = msg.View;
+        var mapFormat = msg.MapFormat;
         var showPopupMenus = msg.ShowPopupMenus;
         var cursorResource = msg.CursorResource;
 
-        RunOnMainThread(() => UpdateClientInfo(iconSize, view, showPopupMenus, cursorResource));
+        RunOnMainThread(() => UpdateClientInfo(iconSize, view, mapFormat, showPopupMenus, cursorResource));
     }
 
-    private void UpdateClientInfo(int iconSize, ViewRange view, bool showPopupMenus, int cursorResource) {
+    private void UpdateClientInfo(int iconSize, ViewRange view, MapFormat mapFormat, bool showPopupMenus, int cursorResource) {
         IconSize = iconSize;
         View = view;
+        MapFormat = mapFormat;
         ShowPopupMenus = showPopupMenus;
         if (cursorResource != 0)
             _dreamResource.LoadResourceAsync<DMIResource>(cursorResource, resource => {
@@ -581,7 +599,7 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
             .Replace("%2d", "-", StringComparison.OrdinalIgnoreCase);
     }
 
-    public void RunCommand(string fullCommand, bool repeating = false) {
+    public void RunCommand(string fullCommand, bool repeating = false, NetEntity? atomContext = null, string? atomRefContext = null) {
         switch (fullCommand) {
             case not null when fullCommand.StartsWith(".quit"):
                 _gameController.Shutdown(".quit used");
@@ -614,6 +632,25 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
                 }
 
                 Output(args[1], args[2]);
+                break;
+            }
+
+            case not null when fullCommand.StartsWith(".sound"): {
+                var soundCommandText = fullCommand[6..].Trim();
+                if (!SoundCommandParser.TryParse(soundCommandText, out var soundCommand, out var error, atomContext, atomRefContext)) {
+                    _sawmill.Error($".sound command failed: {error}");
+                    break;
+                }
+
+                if (soundCommand.Stop) {
+                    if (soundCommand.SoundData.Channel == 0)
+                        _soundEngine.StopAllChannels();
+                    else
+                        _soundEngine.StopChannel(soundCommand.SoundData.Channel);
+                } else if (soundCommand.ResourcePath != null && soundCommand.Format != null) {
+                    _soundEngine.PlaySound(soundCommand.SoundData, soundCommand.Format.Value, soundCommand.ResourcePath);
+                }
+
                 break;
             }
 
@@ -1232,6 +1269,7 @@ public interface IDreamInterfaceManager {
     public ViewRange View { get; }
     public bool ShowPopupMenus { get; }
     public int IconSize { get; }
+    public MapFormat MapFormat { get; }
     public CursorHolder Cursors { get; }
 
     void Initialize();
@@ -1242,7 +1280,7 @@ public interface IDreamInterfaceManager {
 
     public void OpenAlert(string title, string message, string button1, string? button2, string? button3, Action<DreamValueType, object?>? onClose);
     public void Prompt(DreamValueType types, string title, string message, string defaultValue, Action<DreamValueType, object?>? onClose);
-    public void RunCommand(string fullCommand, bool isRepeating = false);
+    public void RunCommand(string fullCommand, bool isRepeating = false, NetEntity? atomContext = null, string? atomRefContext = null);
     public void StopRepeatingCommand(string command);
     public void WinSet(string? controlId, string winsetParams);
     public string WinGet(string controlId, string queryValue, bool forceJson = false, bool forceSnowflake = false);

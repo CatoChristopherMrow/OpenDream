@@ -7,6 +7,8 @@ namespace OpenDreamClient.Rendering;
 internal sealed class RendererMetaData : IComparable<RendererMetaData> {
     public DreamIcon? MainIcon;
     public Vector2 Position;
+    public Vector2 SortPosition;
+    public MapFormat MapFormat;
     public int Plane; //true plane value may be different from appearance plane value, due to special flags
     public float Layer; //ditto for layer
     public EntityUid Uid;
@@ -40,6 +42,8 @@ internal sealed class RendererMetaData : IComparable<RendererMetaData> {
     public void Reset() {
         MainIcon = null;
         Position = Vector2.Zero;
+        SortPosition = Vector2.Zero;
+        MapFormat = MapFormat.TopDown;
         Plane = 0;
         Layer = 0;
         Uid = EntityUid.Invalid;
@@ -107,11 +111,28 @@ internal sealed class RendererMetaData : IComparable<RendererMetaData> {
             return val;
         }
 
-        //depending on world.map_format, either layer or physical position
-        //TODO
-        val = Layer.CompareTo(other.Layer);
-        if (val != 0) {
-            return val;
+        if (MapFormat == MapFormat.TopDown || IsScreen) {
+            val = Layer.CompareTo(other.Layer);
+            if (val != 0) {
+                return val;
+            }
+        } else {
+            // Non-topdown maps sort by physical position before layer. Higher/northern
+            // positions are drawn first; lower/southern positions are drawn later/in front.
+            val = other.SortPosition.Y.CompareTo(SortPosition.Y);
+            if (val != 0) {
+                return val;
+            }
+
+            val = SortPosition.X.CompareTo(other.SortPosition.X);
+            if (val != 0) {
+                return val;
+            }
+
+            val = Layer.CompareTo(other.Layer);
+            if (val != 0) {
+                return val;
+            }
         }
 
         //Finally, tie-breaker - in BYOND, this is order of creation of the sprites

@@ -153,8 +153,14 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
     }
 
     //three things to do here, chained animations, loops and parallel animations
-    public void StartAppearanceAnimation(ImmutableAppearance endingAppearance, TimeSpan duration, AnimationEasing easing, int loops, AnimationFlags flags, int delay, bool chainAnim) {
+    public void StartAppearanceAnimation(ImmutableAppearance endingAppearance, TimeSpan duration, AnimationEasing easing, int loops, AnimationFlags flags, int delay, bool chainAnim, string? tag, string? command, Action<string>? commandRunner) {
         _appearance = CalculateAnimatedAppearance(); //Animation starts from the current animated appearance
+        if (tag != null) {
+            RemoveAppearanceAnimationsByTag(tag);
+            flags |= AnimationFlags.AnimationParallel;
+            chainAnim = true;
+        }
+
         DateTime start = DateTime.Now;
         if(!chainAnim)
             EndAppearanceAnimation(null);
@@ -178,7 +184,15 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
                 break;
             }
 
-        _appearanceAnimations.Add(new AppearanceAnimation(start, duration, endingAppearance, easing, flags, delay, true));
+        _appearanceAnimations.Add(new AppearanceAnimation(start, duration, endingAppearance, easing, flags, delay, true, tag, command, commandRunner));
+    }
+
+    public void StopAppearanceAnimation(string? tag) {
+        if (tag == null)
+            return;
+
+        _appearance = CalculateAnimatedAppearance();
+        RemoveAppearanceAnimationsByTag(tag);
     }
 
     /// <summary>
@@ -199,6 +213,13 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
             _appearance = appearanceAnimation.Value.EndAppearance;
             _appearanceAnimations.Remove(appearanceAnimation.Value);
         }
+    }
+
+    private void RemoveAppearanceAnimationsByTag(string tag) {
+        if (_appearanceAnimations == null)
+            return;
+
+        _appearanceAnimations.RemoveAll(animation => animation.Tag == tag);
     }
 
     public void GetWorldAABB(Vector2 worldPos, ref Box2? aabb) {
@@ -437,6 +458,9 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
             }
 
             if (timeFactor >= 1f) {
+                if (animation.Command != null)
+                    animation.CommandRunner?.Invoke(animation.Command);
+
                 toRemove ??= new();
                 toRemove.Add(animation);
                 if (_appearanceAnimationsLoops != 0) { //add it back to the list with the times updated
@@ -448,7 +472,7 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
                         start = _appearanceAnimations[^1].Start; //either that's also a parallel, or its one that this should be parallel with
                     else
                         start = _appearanceAnimations[^1].Start + _appearanceAnimations[^1].Duration; //if it's not parallel, it's chained
-                    AppearanceAnimation repeatAnimation = new AppearanceAnimation(start, animation.Duration, animation.EndAppearance, animation.Easing, animation.Flags, animation.Delay, animation.LastInSequence);
+                    AppearanceAnimation repeatAnimation = new AppearanceAnimation(start, animation.Duration, animation.EndAppearance, animation.Easing, animation.Flags, animation.Delay, animation.LastInSequence, animation.Tag, animation.Command, animation.CommandRunner);
                     toReAdd.Add(repeatAnimation);
                 }
             }
@@ -585,7 +609,7 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
         CachedTexture = null;
     }
 
-    private struct AppearanceAnimation(DateTime start, TimeSpan duration, ImmutableAppearance endAppearance, AnimationEasing easing, AnimationFlags flags, int delay, bool lastInSequence) {
+    private struct AppearanceAnimation(DateTime start, TimeSpan duration, ImmutableAppearance endAppearance, AnimationEasing easing, AnimationFlags flags, int delay, bool lastInSequence, string? tag, string? command, Action<string>? commandRunner) {
         public readonly DateTime Start = start;
         public readonly TimeSpan Duration = duration;
         public readonly ImmutableAppearance EndAppearance = endAppearance;
@@ -593,5 +617,8 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
         public readonly AnimationFlags Flags = flags;
         public readonly int Delay = delay;
         public bool LastInSequence = lastInSequence;
+        public readonly string? Tag = tag;
+        public readonly string? Command = command;
+        public readonly Action<string>? CommandRunner = commandRunner;
     }
 }

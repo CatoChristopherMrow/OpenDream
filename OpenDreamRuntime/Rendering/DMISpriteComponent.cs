@@ -1,5 +1,6 @@
 ﻿using OpenDreamShared.Dream;
 using OpenDreamShared.Rendering;
+using Robust.Shared.Maths;
 
 namespace OpenDreamRuntime.Rendering;
 
@@ -11,5 +12,7 @@ public sealed partial class DMISpriteComponent : SharedDMISpriteComponent {
 
     [Access(typeof(DMISpriteSystem))]
     [ViewVariables] public ImmutableAppearance? Appearance;
-}
 
+    [Access(typeof(DMISpriteSystem))]
+    [ViewVariables] public Vector2i BoundOffset;
+}

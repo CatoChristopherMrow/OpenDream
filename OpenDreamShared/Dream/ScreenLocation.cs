@@ -26,6 +26,17 @@ public enum VerticalAnchor {
     Top
 }
 
+public readonly record struct ScreenLocationBounds(float Left, float Bottom, float Right, float Top) {
+    public ScreenLocationBounds Include(ScreenLocationBounds bounds) {
+        return new(
+            Math.Min(Left, bounds.Left),
+            Math.Min(Bottom, bounds.Bottom),
+            Math.Max(Right, bounds.Right),
+            Math.Max(Top, bounds.Top)
+        );
+    }
+}
+
 [Serializable, NetSerializable]
 public sealed class ScreenLocation {
     public string? MapControl;
@@ -82,28 +93,44 @@ public sealed class ScreenLocation {
         ParseScreenLoc(screenLocation);
     }
 
-    public Vector2 GetViewPosition(Vector2 viewOffset, ViewRange view, float tileSize, Vector2i iconSize) {
+    public Vector2 GetViewPosition(Vector2 viewOffset, ViewRange view, float tileSize, Vector2i iconSize, ScreenLocationBounds? screenBounds = null) {
         // TODO: LEFT/RIGHT/TOP/BOTTOM need to stick to the edge of the visible map if the map's container is smaller than the map itself
-        
+        ScreenLocationBounds bounds = AnchorToScreenBounds && screenBounds != null
+            ? screenBounds.Value
+            : new ScreenLocationBounds(0, 0, view.Width, view.Height);
+        Vector2 iconSizeTiles = iconSize / tileSize;
+
         float x = (X + PixelOffsetX / tileSize);
         x += HorizontalAnchor switch {
-            HorizontalAnchor.West or HorizontalAnchor.Left => 0,
-            HorizontalAnchor.Center => view.CenterX,
-            HorizontalAnchor.East => view.Width - 1,
-            HorizontalAnchor.Right => view.Width - (iconSize.X / tileSize),
+            HorizontalAnchor.West or HorizontalAnchor.Left => bounds.Left,
+            HorizontalAnchor.Center => AnchorToScreenBounds ? (bounds.Left + bounds.Right - iconSizeTiles.X) / 2 : view.CenterX,
+            HorizontalAnchor.East => bounds.Right - 1,
+            HorizontalAnchor.Right => bounds.Right - iconSizeTiles.X,
             _ => throw new Exception($"Invalid horizontal anchor {HorizontalAnchor}")
         };
 
         float y = (Y + PixelOffsetY / tileSize);
         y += VerticalAnchor switch {
-            VerticalAnchor.South or VerticalAnchor.Bottom => 0,
-            VerticalAnchor.Center => view.CenterY,
-            VerticalAnchor.North => view.Height - 1,
-            VerticalAnchor.Top => view.Height - (iconSize.Y / tileSize),
+            VerticalAnchor.South or VerticalAnchor.Bottom => bounds.Bottom,
+            VerticalAnchor.Center => AnchorToScreenBounds ? (bounds.Bottom + bounds.Top - iconSizeTiles.Y) / 2 : view.CenterY,
+            VerticalAnchor.North => bounds.Top - 1,
+            VerticalAnchor.Top => bounds.Top - iconSizeTiles.Y,
             _ => throw new Exception($"Invalid vertical anchor {VerticalAnchor}")
         };
 
         return viewOffset + new Vector2(x, y);
+    }
+
+    public ScreenLocationBounds GetScreenBounds(ViewRange view, float tileSize, Vector2i iconSize) {
+        Vector2 position = GetViewPosition(Vector2.Zero, view, tileSize, iconSize);
+        Vector2 iconSizeTiles = iconSize / tileSize;
+
+        return new ScreenLocationBounds(
+            position.X,
+            position.Y,
+            position.X + iconSizeTiles.X * RepeatX,
+            position.Y + iconSizeTiles.Y * RepeatY
+        );
     }
 
     public override string ToString() {

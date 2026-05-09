@@ -9,7 +9,9 @@ using OpenDreamRuntime.Rendering;
 using OpenDreamRuntime.Resources;
 using OpenDreamShared.Dream;
 using OpenDreamShared.Network.Messages;
+using Robust.Shared.GameObjects;
 using Robust.Shared.Enums;
+using Robust.Shared.Maths;
 using Robust.Shared.Player;
 using Robust.Shared.Utility;
 using SpaceWizards.Sodium;
@@ -22,6 +24,7 @@ public sealed partial class DreamConnection {
     [Dependency] private DreamObjectTree _objectTree = default!;
     [Dependency] private DreamResourceManager _resourceManager = default!;
     [Dependency] private IEntitySystemManager _entitySystemManager = default!;
+    [Dependency] private IEntityManager _entityManager = default!;
     [Dependency] private ISharedPlayerManager _playerManager = default!;
 
     private readonly ServerScreenOverlaySystem? _screenOverlaySystem;
@@ -175,6 +178,7 @@ public sealed partial class DreamConnection {
         MsgUpdateClientInfo msg = new() {
             IconSize = _dreamManager.WorldInstance.IconSize,
             View = Client!.View,
+            MapFormat = _dreamManager.WorldInstance.MapFormat,
             ShowPopupMenus = Client!.ShowPopupMenus,
             CursorResource = Client!.CursorIcon?.Id ?? 0
         };
@@ -261,7 +265,10 @@ public sealed partial class DreamConnection {
                     Channel = sound.Channel,
                     Volume = sound.Volume,
                     Offset = sound.Offset,
-                    Repeat = sound.Repeat
+                    Repeat = sound.Repeat,
+                    Atom = GetSoundAtom(sound),
+                    OffsetPosition = GetSoundOffset(sound),
+                    Falloff = GetSoundFloatVar(sound, "falloff")
                 }
             };
 
@@ -296,6 +303,33 @@ public sealed partial class DreamConnection {
         message = StringFormatDecoder.RemoveFormatting(message);
 
         OutputControl(message, null);
+    }
+
+    private NetEntity GetSoundAtom(DreamObjectSound sound) {
+        using DreamValue atomValue = sound.GetVariable("atom");
+
+        return atomValue.TryGetValueAsDreamObject<DreamObjectMovable>(out var movable)
+            ? _entityManager.GetNetEntity(movable.Entity)
+            : NetEntity.Invalid;
+    }
+
+    private static Vector3 GetSoundOffset(DreamObjectSound sound) {
+        float x = GetSoundFloatVar(sound, "x");
+        float y = GetSoundFloatVar(sound, "y");
+        float z = GetSoundFloatVar(sound, "z");
+
+        using DreamValue transformValue = sound.GetVariable("transform");
+        if (transformValue.TryGetValueAsDreamObject<DreamObjectMatrix>(out var matrix)) {
+            x += matrix.C;
+            y += matrix.F;
+        }
+
+        return new Vector3(x, y, z);
+    }
+
+    private static float GetSoundFloatVar(DreamObjectSound sound, string varName) {
+        using DreamValue value = sound.GetVariable(varName);
+        return value.TryGetValueAsFloat(out var result) ? result : 0f;
     }
 
     public void OutputControl(string message, string? control) {

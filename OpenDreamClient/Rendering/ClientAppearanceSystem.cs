@@ -169,17 +169,29 @@ internal sealed partial class ClientAppearanceSystem : SharedAppearanceSystem {
 
     private void OnAnimation(AnimationEvent e) {
         if(e.Entity == NetEntity.Invalid && e.TurfId is not null) { //it's a turf or area
-            if(_turfIcons.TryGetValue(e.TurfId.Value-1, out var turfIcon))
+            if(_turfIcons.TryGetValue(e.TurfId.Value-1, out var turfIcon)) {
+                if (e.Stop) {
+                    turfIcon.StopAppearanceAnimation(e.Tag);
+                    return;
+                }
+
                 LoadAppearance(e.TargetAppearanceId, targetAppearance => {
-                    turfIcon.StartAppearanceAnimation(targetAppearance, e.Duration, e.Easing, e.Loop, e.Flags, e.Delay, e.ChainAnim);
+                    turfIcon.StartAppearanceAnimation(targetAppearance, e.Duration, e.Easing, e.Loop, e.Flags, e.Delay, e.ChainAnim, e.Tag, e.Command, null);
                 });
+            }
         } else { //image or movable
             EntityUid ent = _entityManager.GetEntity(e.Entity);
             if (!_entityManager.TryGetComponent<DMISpriteComponent>(ent, out var sprite))
                 return;
 
+            if (e.Stop) {
+                sprite.Icon.StopAppearanceAnimation(e.Tag);
+                return;
+            }
+
             LoadAppearance(e.TargetAppearanceId, targetAppearance => {
-                sprite.Icon.StartAppearanceAnimation(targetAppearance, e.Duration, e.Easing, e.Loop, e.Flags, e.Delay, e.ChainAnim);
+                sprite.Icon.StartAppearanceAnimation(targetAppearance, e.Duration, e.Easing, e.Loop, e.Flags, e.Delay, e.ChainAnim, e.Tag, e.Command,
+                    command => _interfaceManager.RunCommand(command, atomContext: e.Entity, atomRefContext: e.AtomRef));
             });
         }
     }

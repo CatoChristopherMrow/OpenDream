@@ -239,6 +239,23 @@ public sealed class DreamObjectVector(DreamObjectDefinition definition) : DreamO
 
     #endregion Operators
 
+    public override DreamValue OperatorIndex(DreamValue index, DMProcState state) {
+        if (index.TryGetValueAsInteger(out var integerIndex)) {
+            return integerIndex switch {
+                1 => new DreamValue(X),
+                2 => new DreamValue(Y),
+                3 when Is3D => new DreamValue(Z),
+                _ => throw new IndexOutOfRangeException("Vector index out of bounds")
+            };
+        }
+
+        throw new InvalidOperationException($"Cannot index {this} with {index}");
+    }
+
+    public override void OperatorIndexAssign(DreamValue index, DMProcState state, DreamValue value) {
+        throw new InvalidOperationException("Cannot write to indexed value in this type of list");
+    }
+
     protected override bool TryGetVar(string varName, out DreamValue value) {
         switch (varName) {
             case "type":
@@ -289,8 +306,7 @@ public sealed class DreamObjectVector(DreamObjectDefinition definition) : DreamO
                 Y = value.UnsafeGetValueAsFloat();
                 break;
             case "z":
-                Z = value.UnsafeGetValueAsFloat();
-                break;
+                throw new Exception("bad vector size");
             default:
                 // Hide the base vars
                 throw new Exception($"Invalid vector variable \"{varName}\"");

@@ -26,6 +26,7 @@ public sealed partial class DreamObjectWorld : DreamObject {
 
     public float Cpu { get; set; }
     public readonly int IconSize;
+    public MapFormat MapFormat { get; private set; }
 
     [Dependency] private IBaseServer _server = default!;
     [Dependency] private IGameTiming _gameTiming = default!;
@@ -83,6 +84,9 @@ public sealed partial class DreamObjectWorld : DreamObject {
             _sawmill.Warning("world.icon_size did not contain a valid value. A default of 32 is being used.");
             IconSize = 32;
         }
+
+        if (objectDefinition.Variables["map_format"].TryGetValueAsInteger(out var mapFormat))
+            MapFormat = (MapFormat)mapFormat;
 
         DreamValue view = objectDefinition.Variables["view"];
         if (view.TryGetValueAsString(out var viewString)) {
@@ -250,6 +254,11 @@ public sealed partial class DreamObjectWorld : DreamObject {
             case "hub_password":
             case "loop_checks":
             case "map_format":
+                if (value.TryGetValueAsInteger(out var mapFormat))
+                    MapFormat = (MapFormat)mapFormat;
+                // Set it in the var dictionary, so reading at least gives the same value
+                base.SetVar(varName, value);
+                break;
             case "mob":
             case "movement_mode":
             case "name":

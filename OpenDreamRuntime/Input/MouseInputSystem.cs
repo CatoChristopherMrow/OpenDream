@@ -155,19 +155,9 @@ internal sealed partial class MouseInputSystem : SharedMouseInputSystem {
         paramsBuilder.Append($"icon-x={clickParams.IconX.ToString()};");
         paramsBuilder.Append($"icon-y={clickParams.IconY.ToString()};");
 
-        string button;
+        string button = GetButtonParamName(clickParams.Button);
 
-        // Handles setting left=1, right=1, or middle=1 mouse param
-        if (clickParams.Right) {
-            paramsBuilder.Append("right=1;");
-            button = "right";
-        } else if (clickParams.Middle) {
-             paramsBuilder.Append("middle=1;");
-             button = "middle";
-        } else {
-            paramsBuilder.Append("left=1;");
-            button = "left";
-        }
+        paramsBuilder.Append($"{button}=1;");
 
         // Modifier keys
         if (clickParams.Ctrl) paramsBuilder.Append("ctrl=1;");

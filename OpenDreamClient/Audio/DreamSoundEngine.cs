@@ -3,6 +3,9 @@ using OpenDreamClient.Resources.ResourceTypes;
 using OpenDreamShared.Network.Messages;
 using Robust.Client.Audio;
 using Robust.Shared.Audio;
+using Robust.Shared.Audio.Components;
+using Robust.Shared.GameObjects;
+using Robust.Shared.Map;
 using Robust.Shared.Network;
 
 namespace OpenDreamClient.Audio;
@@ -63,13 +66,39 @@ public sealed partial class DreamSoundEngine : IDreamSoundEngine {
         }
 
         var db = 20 * MathF.Log10(soundData.Volume / 100.0f); // convert from DM volume (0-100) to OpenAL volume (db)
-        var source = _audioSystem.PlayGlobal(stream, null, AudioParams.Default.WithVolume(db).WithPlayOffset(soundData.Offset).WithLoop(soundData.Repeat != 0)); // TODO: Positional audio.
+        AudioParams audioParams = AudioParams.Default
+            .WithVolume(db)
+            .WithPlayOffset(soundData.Offset)
+            .WithLoop(soundData.Repeat != 0);
+        if (soundData.Falloff > 0)
+            audioParams = audioParams.WithMaxDistance(soundData.Falloff);
+
+        (EntityUid Entity, AudioComponent Component)? source;
+        if (soundData.Atom != NetEntity.Invalid && _entityManager.TryGetEntity(soundData.Atom, out var atomEntity)) {
+            if (soundData.OffsetPosition != default) {
+                var coordinates = new EntityCoordinates(atomEntity.Value, soundData.OffsetPosition.X, soundData.OffsetPosition.Y);
+                source = _audioSystem.PlayStatic(stream, coordinates, null, audioParams);
+            } else {
+                source = _audioSystem.PlayEntity(stream, atomEntity.Value, null, audioParams);
+            }
+        } else {
+            source = _audioSystem.PlayGlobal(stream, null, audioParams);
+        }
+
         if (source == null) {
             _sawmill.Error($"Failed to play audio ${sound}");
             return;
         }
 
         _channels[channel - 1] = new DreamSoundChannel(_audioSystem, source.Value, soundData);
+    }
+
+    public void PlaySound(SoundData soundData, MsgSound.FormatType format, string resourcePath) {
+        _resourceManager.LookupResourceAsync(resourcePath,
+            resourceId => _resourceManager.LoadResourceAsync<ResourceSound>(
+                resourceId,
+                sound => PlaySound(soundData, format, sound)),
+            () => _sawmill.Error($"Failed to find audio resource \"{resourcePath}\""));
     }
 
     public void StopChannel(int channel) {

@@ -85,7 +85,8 @@ public sealed partial class ControlMap(ControlDescriptor controlDescriptor, Cont
 
     private void OnViewportKeyBindEvent(GUIBoundKeyEventArgs e) {
         if (e.Function == EngineKeyFunctions.Use || e.Function == EngineKeyFunctions.TextCursorSelect ||
-            e.Function == EngineKeyFunctions.UIRightClick || e.Function == OpenDreamKeyFunctions.MouseMiddle) {
+            e.Function == EngineKeyFunctions.UIRightClick || e.Function == OpenDreamKeyFunctions.MouseMiddle ||
+            e.Function == OpenDreamKeyFunctions.MouseButton4 || e.Function == OpenDreamKeyFunctions.MouseButton5) {
             _entitySystemManager.Resolve(ref _mouseInput);
 
             if (_mouseInput.HandleViewportEvent(Viewport, e, ControlDescriptor)) {
