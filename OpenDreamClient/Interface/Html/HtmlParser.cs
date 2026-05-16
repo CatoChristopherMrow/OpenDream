@@ -224,6 +224,16 @@ public static class HtmlParser {
 
             string attributeName = attribute.Substring(0, equalsIndex);
             string attributeValue = attribute.Substring(equalsIndex + 1);
+            if (attributeValue.Length == 0)
+                continue;
+
+            if (attributeValue[0] is '"' or '\'') {
+                var quote = attributeValue[0];
+                while ((attributeValue.Length == 1 || attributeValue[^1] != quote) && i + 1 < attributes.Length) {
+                    attributeValue += " " + attributes[++i];
+                }
+            }
+
             if (attributeValue[0] is not '"' and not '\'' || attributeValue[^1] is not '"' and not '\'')
                 continue;
 
@@ -239,6 +249,10 @@ public static class HtmlParser {
                         color = Color.TryFromHex(attributeTextValue) ?? Color.Black;
 
                     parameter = new(color);
+                    break;
+                case "align":
+                case "style":
+                    parameter = new(attributeTextValue);
                     break;
                 default:
                     if (WarnedAttributes.Add(attributeName))

@@ -63,6 +63,7 @@
 		ASSERT(d in dir_compare)
 	ASSERT(S["test"] == null)
 	S.cd = "test"
+	ASSERT(S.eof == 1)
 	ASSERT(dir ~= list("beep"))
 
 	//test del
@@ -81,6 +82,14 @@
 		ASSERT(d in dir_compare)
 
 	ASSERT(S["CBA"] == 5)
+
+	S["outer/inner/value"] << 123
+	S.cd = "outer"
+	ASSERT(S.eof == 1)
+	S.cd = "inner"
+	ASSERT(S.eof == 1)
+	S.cd = "value"
+	ASSERT(S.eof == 0)
 
 	fdel("savefile.sav")
 

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.Json.Nodes;
 using JetBrains.Annotations;
 using OpenDreamRuntime.Objects.Types;
 using OpenDreamRuntime.Resources;
@@ -109,6 +110,9 @@ internal static partial class DMOpcodeHandlers {
             }
 
             var retString = Marshal.PtrToStringUTF8((nint)ret) ?? string.Empty;
+            if (procName == "dmi_read_metadata")
+                retString = NormalizeDmiMetadata(retString);
+
             state.Push(new DreamValue(retString));
             return ProcStatus.Continue;
         } finally {
@@ -118,5 +122,24 @@ internal static partial class DMOpcodeHandlers {
                     Marshal.ZeroFreeCoTaskMemUTF8(arg);
             }
         }
+    }
+
+    private static string NormalizeDmiMetadata(string metadata) {
+        var root = JsonNode.Parse(metadata);
+        if (root is not JsonObject metadataObject || metadataObject["states"] is not JsonArray states)
+            return metadata;
+
+        foreach (var state in states) {
+            if (state?["name"]?.GetValue<string>() == string.Empty)
+                return metadata;
+        }
+
+        var defaultState = new JsonObject {
+            ["name"] = string.Empty,
+            ["dirs"] = 1
+        };
+
+        states.Insert(0, defaultState);
+        return metadataObject.ToJsonString();
     }
 }

@@ -161,7 +161,7 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
             chainAnim = true;
         }
 
-        DateTime start = DateTime.Now;
+        DateTime start = DateTime.Now + TimeSpan.FromMilliseconds(delay * 100);
         if(!chainAnim)
             EndAppearanceAnimation(null);
         else

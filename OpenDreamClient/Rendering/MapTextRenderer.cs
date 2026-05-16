@@ -21,6 +21,12 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
 
     private readonly Color _defaultColor = Color.White;
 
+    private enum TextAlignment {
+        Left,
+        Center,
+        Right
+    }
+
     // TODO: This is probably unoptimal and could cache a lot of things between frames
     public void RenderToTarget(DrawingHandleWorld handle, IRenderTexture texture, string maptext) {
         handle.RenderInRenderTarget(texture, () => {
@@ -30,12 +36,15 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
             HtmlParser.Parse(StringFormatDecoder.RemoveFormatting(maptext), message);
 
             var (height, lineBreaks) = ProcessWordWrap(message, texture.Size.X);
+            var alignment = GetTextAlignment(message);
+            var lineWidths = GetLineWidths(message, lineBreaks);
             var lineHeight = _defaultFont.GetLineHeight(Scale);
             var context = new MarkupDrawingContext();
             context.Color.Push(_defaultColor);
             context.Font.Push(_defaultFont);
 
-            var baseLine = new Vector2(0, height - lineHeight);
+            var currentLine = 0;
+            var baseLine = new Vector2(GetAlignedX(texture.Size.X, lineWidths, currentLine, alignment), height - lineHeight);
             var lineBreakIndex = 0;
             var globalBreakCounter = 0;
 
@@ -48,7 +57,8 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
 
                 foreach (var rune in text.EnumerateRunes()) {
                     if (lineBreakIndex < lineBreaks.Count && lineBreaks[lineBreakIndex] == globalBreakCounter) {
-                        baseLine = new(0, baseLine.Y - lineHeight);
+                        currentLine += 1;
+                        baseLine = new(GetAlignedX(texture.Size.X, lineWidths, currentLine, alignment), baseLine.Y - lineHeight);
                         lineBreakIndex += 1;
                     }
 
@@ -64,6 +74,74 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
                 }
             }
         }, Color.Transparent);
+    }
+
+    private static float GetAlignedX(float width, IReadOnlyList<float> lineWidths, int line, TextAlignment alignment) {
+        if (alignment == TextAlignment.Left || line >= lineWidths.Count)
+            return 0;
+
+        return alignment switch {
+            TextAlignment.Center => MathF.Max(0, (width - lineWidths[line]) / 2),
+            TextAlignment.Right => MathF.Max(0, width - lineWidths[line]),
+            _ => 0
+        };
+    }
+
+    private TextAlignment GetTextAlignment(FormattedMessage message) {
+        foreach (var node in message) {
+            if (node.Attributes.TryGetValue("align", out var alignParameter) &&
+                alignParameter.StringValue is { } align)
+                return ParseAlignment(align);
+
+            if (node.Attributes.TryGetValue("style", out var styleParameter) &&
+                styleParameter.StringValue is { } style) {
+                foreach (var declaration in style.Split(';', StringSplitOptions.RemoveEmptyEntries)) {
+                    var parts = declaration.Split(':', 2, StringSplitOptions.TrimEntries);
+                    if (parts.Length == 2 && parts[0].Equals("text-align", StringComparison.OrdinalIgnoreCase))
+                        return ParseAlignment(parts[1]);
+                }
+            }
+        }
+
+        return TextAlignment.Left;
+    }
+
+    private static TextAlignment ParseAlignment(string value) {
+        return value.Trim().ToLowerInvariant() switch {
+            "center" => TextAlignment.Center,
+            "right" => TextAlignment.Right,
+            _ => TextAlignment.Left
+        };
+    }
+
+    private List<float> GetLineWidths(FormattedMessage message, IReadOnlyList<int> lineBreaks) {
+        var context = new MarkupDrawingContext();
+        context.Color.Push(_defaultColor);
+        context.Font.Push(_defaultFont);
+
+        var result = new List<float> {0};
+        var lineBreakIndex = 0;
+        var globalBreakCounter = 0;
+
+        foreach (var node in message) {
+            var text = ProcessNode(node, context);
+            if (!context.Font.TryPeek(out var font))
+                font = _defaultFont;
+
+            foreach (var rune in text.EnumerateRunes()) {
+                if (lineBreakIndex < lineBreaks.Count && lineBreaks[lineBreakIndex] == globalBreakCounter) {
+                    result.Add(0);
+                    lineBreakIndex += 1;
+                }
+
+                if (font.TryGetCharMetrics(rune, Scale, out var metric))
+                    result[^1] += metric.Advance;
+
+                globalBreakCounter += 1;
+            }
+        }
+
+        return result;
     }
 
     private string ProcessNode(MarkupNode node, MarkupDrawingContext context) {

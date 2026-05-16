@@ -554,14 +554,12 @@ internal static class DreamProcNativeRoot {
             srcFile = bundle.ResourceManager.LoadResource(srcPath);
         }
 
-        if (srcFile?.ResourceData == null) {
-            throw new Exception($"Bad src file {arg1}");
-        }
+        if (srcFile?.ResourceData == null)
+            return DreamValue.False;
 
         var arg2 = bundle.GetArgument(1, "Dst");
-        if (!arg2.TryGetValueAsString(out var dst)) {
-            throw new Exception($"Bad dst file {arg2}");
-        }
+        if (!arg2.TryGetValueAsString(out var dst))
+            return DreamValue.False;
 
         return new DreamValue(bundle.ResourceManager.CopyFile(srcFile, dst) ? 1 : 0);
     }
@@ -1127,23 +1125,26 @@ internal static class DreamProcNativeRoot {
     [DreamProcParameter("Icon", Type = DreamValueTypeFlag.DreamResource)]
     [DreamProcParameter("mode", Type = DreamValueTypeFlag.Float, DefaultValue = 0)]
     public static DreamValue NativeProc_icon_states(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
-        var mode = bundle.GetArgument(1, "mode").MustGetValueAsInteger();
-        if (mode != 0) {
-            throw new NotImplementedException("Only mode 0 is implemented");
-        }
-
         var arg = bundle.GetArgument(0, "Icon");
 
         if (arg.TryGetValueAsDreamObject<DreamObjectIcon>(out var iconObj)) {
             // Fast path for /icon, we don't need to generate the entire DMI
-            return new DreamValue(bundle.ObjectTree.CreateList(iconObj.Icon.States.Keys.ToArray()));
+            return CreateIconStatesList(bundle, iconObj.Icon.States.Keys);
         } else if (bundle.ResourceManager.TryLoadIcon(arg, out var iconRsc)) {
-            return new DreamValue(bundle.ObjectTree.CreateList(iconRsc.DMI.States.Keys.ToArray()));
+            return CreateIconStatesList(bundle, iconRsc.DMI.States.Keys);
         } else if (arg.IsNull) {
             return DreamValue.Null;
         } else {
             throw new Exception($"Bad icon {arg}");
         }
+    }
+
+    private static DreamValue CreateIconStatesList(NativeProc.Bundle bundle, IEnumerable<string> states) {
+        string[] statesArray = states.Contains(string.Empty)
+            ? states.ToArray()
+            : states.Prepend(string.Empty).ToArray();
+
+        return new DreamValue(bundle.ObjectTree.CreateList(statesArray));
     }
 
     [DreamProc("image")]
@@ -2223,13 +2224,31 @@ internal static class DreamProcNativeRoot {
             return new DreamValue(bundle.ObjectTree.CreateList());
 
         DreamList rangeList = bundle.ObjectTree.CreateList(range.Height * range.Width);
+        HashSet<DreamValue> addedValues = new();
+        var atomManager = bundle.AtomManager;
+        var objectTree = bundle.ObjectTree;
+
+        void AddUnique(DreamValue value) {
+            if (value.IsNull || !addedValues.Add(value))
+                return;
+
+            rangeList.AddValue(value);
+        }
+
+        void AddVisibleAtom(DreamObjectAtom atom) {
+            if (atom != center && !DreamProcNativeHelpers.IsObjectVisible(atomManager, objectTree, atom, center))
+                return;
+
+            AddUnique(new DreamValue(atom));
+        }
 
         //Have to include centre
-        rangeList.AddValue(new DreamValue(center));
+        AddVisibleAtom(center);
 
         if(center.TryGetVariable("contents", out var centerContents) && centerContents.TryGetValueAsDreamList(out var centerContentsList)) {
             foreach(DreamValue content in centerContentsList.EnumerateValues()) {
-                rangeList.AddValue(content);
+                if (content.TryGetValueAsDreamObject<DreamObjectAtom>(out var contentAtom) && contentAtom is not null)
+                    AddVisibleAtom(contentAtom);
             }
         }
 
@@ -2238,12 +2257,13 @@ internal static class DreamProcNativeRoot {
         // If it's not a /turf, we have to include its loc and the loc's contents
         if (center is not DreamObjectTurf && center.TryGetVariable("loc",out DreamValue centerLoc)) {
             if (centerLoc.TryGetValueAsDreamObject<DreamObjectAtom>(out var centerLocObject)) {
-                rangeList.AddValue(centerLoc);
+                AddVisibleAtom(centerLocObject);
 
                 using var contents = centerLocObject.GetVariable("contents");
                 if (contents.TryGetValueAsDreamList(out var locContentsList)) {
                     foreach (DreamValue content in locContentsList.EnumerateValues()) {
-                        rangeList.AddValue(content);
+                        if (content.TryGetValueAsDreamObject<DreamObjectAtom>(out var contentAtom) && contentAtom is not null)
+                            AddVisibleAtom(contentAtom);
                     }
                 }
             }
@@ -2253,9 +2273,10 @@ internal static class DreamProcNativeRoot {
 
         //And then everything else
         foreach (var turf in DreamProcNativeHelpers.MakeViewSpiral(center, range)) {
-            rangeList.AddValue(new DreamValue(turf));
+            AddVisibleAtom(turf);
             foreach (DreamValue content in turf.Contents.EnumerateValues()) {
-                rangeList.AddValue(content);
+                if (content.TryGetValueAsDreamObject<DreamObjectAtom>(out var contentAtom) && contentAtom is not null)
+                    AddVisibleAtom(contentAtom);
             }
         }
 

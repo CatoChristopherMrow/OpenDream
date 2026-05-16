@@ -45,6 +45,8 @@ public sealed partial class DreamObjectWorld : DreamObject {
         set => _gameTiming.TickRate = (byte)value;
     }
 
+    private double WorldTime => (_gameTiming.CurTick.Value - DreamManager.InitializedTick.Value + 1) * TickLag;
+
     /// <summary> Determines whether we try to show IPv6 or IPv4 to the user during .address and .internet_address queries.</summary>
     private bool DisplayIPv6 {
         get {
@@ -160,7 +162,7 @@ public sealed partial class DreamObjectWorld : DreamObject {
                 return true;
 
             case "time":
-                value = new DreamValue((_gameTiming.CurTick.Value - DreamManager.InitializedTick.Value) * TickLag);
+                value = new DreamValue(WorldTime);
                 return true;
 
             case "realtime":

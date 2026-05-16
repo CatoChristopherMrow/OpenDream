@@ -39,7 +39,7 @@ public sealed class DreamObjectSavefile : DreamObject {
                 return;
 
             CurrentDir = tempDir;
-            _eof = false;
+            _eof = tempDir is SfDreamDir;
             if (value.StartsWith('/')) //absolute path
                 _currentPath = value;
             else //relative path

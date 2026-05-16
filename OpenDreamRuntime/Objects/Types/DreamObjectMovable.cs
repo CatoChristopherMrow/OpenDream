@@ -105,9 +105,26 @@ public class DreamObjectMovable : DreamObjectAtom {
                 value = new(_contents);
                 return true;
             case "locs":
-                // TODO: Unimplemented; just returns a list containing src.loc
                 DreamList locs = ObjectTree.CreateList();
-                locs.AddValue(new(Loc));
+                switch (Loc) {
+                    case DreamObjectTurf turf: {
+                        var iconSize = DreamManager.WorldInstance.IconSize;
+                        var tileWidth = Math.Max(1, (int)Math.Ceiling((_boundWidth ?? iconSize) / iconSize));
+                        var tileHeight = Math.Max(1, (int)Math.Ceiling((_boundHeight ?? iconSize) / iconSize));
+
+                        for (int x = turf.X; x < turf.X + tileWidth; x++) {
+                            for (int y = turf.Y; y < turf.Y + tileHeight; y++) {
+                                if (DreamMapManager.TryGetTurfAt((x, y), turf.Z, out var locTurf))
+                                    locs.AddValue(new(locTurf));
+                            }
+                        }
+
+                        break;
+                    }
+                    case not null:
+                        locs.AddValue(new(Loc));
+                        break;
+                }
 
                 value = new DreamValue(locs);
                 return true;
@@ -202,6 +219,7 @@ public class DreamObjectMovable : DreamObjectAtom {
 
     public void SetLoc(DreamObjectAtom? loc) {
         var oldLoc = Loc;
+        var oldMapCell = oldLoc is DreamObjectTurf oldTurf ? oldTurf.Cell : null;
 
         loc?.IncRef();
         Loc?.DecRef();
@@ -209,8 +227,7 @@ public class DreamObjectMovable : DreamObjectAtom {
         if (TransformSystem == null)
             return;
 
-        if (DreamMapManager.TryGetCellAt(Position, Z, out var oldMapCell))
-            oldMapCell.Movables.Remove(this);
+        oldMapCell?.Movables.Remove(this);
 
         if (loc is DreamObjectArea area) { // Puts the atom on the area's first turf
             loc = null; // Nullspace if we can't find a turf

@@ -327,7 +327,7 @@ public sealed partial class DreamMapManager : IDreamMapManager {
                         if (x > size.X || y > size.Y) {
                             var deleteCell = oldCells[x - 1, y - 1];
                             deleteCell.Turf.DecRef();
-                            deleteCell.Turf.Delete();
+                            deleteCell.Turf.HardDelete();
                             _mapSystem.SetTile(existingLevel.Grid, new Vector2i(x, y), Tile.Empty);
                             foreach (var movableToDelete in deleteCell.Movables) {
                                 movableToDelete.DecRef();

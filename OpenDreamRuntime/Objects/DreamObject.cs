@@ -157,6 +157,14 @@ public class DreamObject {
     ///     Del() the object, cleaning up its variables and refs to allow the .NET GC to collect it.
     /// </summary>
     public void Delete() {
+        Delete(force: false);
+    }
+
+    public void HardDelete() {
+        Delete(force: true);
+    }
+
+    private void Delete(bool force) {
         if (Deleting || Deleted)
             return;
 
@@ -169,7 +177,16 @@ public class DreamObject {
             }
         }
 
+        if (!force && !ShouldDelete()) {
+            Deleting = false;
+            return;
+        }
+
         HandleDeletion();
+    }
+
+    protected virtual bool ShouldDelete() {
+        return true;
     }
 
     public bool IsSubtypeOf(TreeEntry ancestor) {

@@ -100,7 +100,7 @@ internal sealed class RendererMetaData : IComparable<RendererMetaData> {
         }
 
         //Plane master objects go first for any given plane
-        val = IsPlaneMaster.CompareTo(IsPlaneMaster);
+        val = IsPlaneMaster.CompareTo(other.IsPlaneMaster);
         if (val != 0) {
             return -val; //sign flip because we want 1 < -1
         }
@@ -151,13 +151,13 @@ internal sealed class RendererMetaData : IComparable<RendererMetaData> {
             }
         }
 
-        // All else being the same, group them by icon.
-        // This allows Clyde to batch the draw calls more efficiently.
-        val = (MainIcon?.Appearance?.Icon ?? 0) - (other.MainIcon?.Appearance?.Icon ?? 0);
+        val = TieBreaker.CompareTo(other.TieBreaker);
         if (val != 0) {
             return val;
         }
 
-        return TieBreaker.CompareTo(other.TieBreaker);
+        // All else being the same, group them by icon.
+        // This allows Clyde to batch the draw calls more efficiently without changing BYOND's draw order.
+        return (MainIcon?.Appearance?.Icon ?? 0) - (other.MainIcon?.Appearance?.Icon ?? 0);
     }
 }

@@ -2243,14 +2243,23 @@ namespace OpenDreamRuntime.Procs {
                     arguments[argName] = value;
                 }
 
-                if (!arguments.TryGetValue("Object", out var objArg) && argumentsArray[0].Key == DreamValue.Null)
+                var hasObjectArg = arguments.TryGetValue("Object", out var objArg);
+                if (!hasObjectArg && argumentsArray[0].Key == DreamValue.Null) {
                     objArg = argumentsArray[0].Value;
+                    hasObjectArg = true;
+                }
 
                 bool chainAnim = false;
 
                 if (!objArg.TryGetValueAsDreamObject<DreamObject>(out var obj)) {
+                    if (hasObjectArg && objArg.IsNull) {
+                        state.Push(DreamValue.Null);
+                        return ProcStatus.Continue;
+                    }
+
                     if (state.Thread.LastAnimatedObject is null || state.Thread.LastAnimatedObject.Value.IsNull) {
-                        throw new Exception("animate() called without an object and no previous object to animate");
+                        state.Push(DreamValue.Null);
+                        return ProcStatus.Continue;
                     } else if (!state.Thread.LastAnimatedObject.Value.TryGetValueAsDreamObject<DreamObject>(out obj)) {
                         state.Push(DreamValue.Null);
                         return ProcStatus.Continue;
@@ -2259,6 +2268,8 @@ namespace OpenDreamRuntime.Procs {
                     chainAnim = true;
                 }
 
+                obj.IncRef();
+                state.Thread.LastAnimatedObject?.Dispose();
                 state.Thread.LastAnimatedObject = new DreamValue(obj);
                 if (obj.IsSubtypeOf(state.Proc.ObjectTree.Filter)) { //TODO animate filters
                     state.Push(DreamValue.Null);
@@ -2530,7 +2541,8 @@ namespace OpenDreamRuntime.Procs {
             using var probability = state.Pop();
 
             if (probability.TryGetValueAsFloat(out float probabilityValue)) {
-                int result = (state.DreamManager.Random.Prob(probabilityValue / 100)) ? 1 : 0;
+                probabilityValue = Math.Clamp(probabilityValue / 100, 0, 1);
+                int result = state.DreamManager.Random.Prob(probabilityValue) ? 1 : 0;
 
                 state.Push(new DreamValue(result));
             } else {
