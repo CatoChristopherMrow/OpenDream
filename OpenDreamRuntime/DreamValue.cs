@@ -501,15 +501,22 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
         switch (Type) {
             case DreamValueType.Float:
                 return _floatValue.Equals(other._floatValue);
+            case DreamValueType.String:
+                return ReferenceEquals(_refValue, other._refValue) ||
+                       string.Equals(Unsafe.As<string>(_refValue), Unsafe.As<string>(other._refValue), StringComparison.Ordinal);
             // Ensure deleted DreamObjects are made null
             case DreamValueType.DreamObject: {
                 Debug.Assert(_refValue is DreamObject or null, "Failed to cast _refValue to DreamObject");
                 Debug.Assert(other._refValue is DreamObject or null, "Failed to cast other._refValue to DreamObject");
-                if (_refValue != null && Unsafe.As<DreamObject>(_refValue).Deleted)
-                    _refValue = null;
-                if (other._refValue != null && Unsafe.As<DreamObject>(other._refValue).Deleted)
-                    other._refValue = null;
-                break;
+                var dreamObject = Unsafe.As<DreamObject?>(_refValue);
+                var otherDreamObject = Unsafe.As<DreamObject?>(other._refValue);
+
+                if (dreamObject?.Deleted == true)
+                    dreamObject = null;
+                if (otherDreamObject?.Deleted == true)
+                    otherDreamObject = null;
+
+                return dreamObject?.RefId == otherDreamObject?.RefId;
             }
         }
 
@@ -519,11 +526,20 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
     }
 
     public override int GetHashCode() {
-        if (_refValue != null) {
-            return _refValue.GetHashCode();
-        }
+        switch (Type) {
+            case DreamValueType.Float:
+                return HashCode.Combine(Type, _floatValue);
+            case DreamValueType.DreamObject: {
+                Debug.Assert(_refValue is DreamObject or null, "Failed to cast _refValue to DreamObject");
+                var dreamObject = Unsafe.As<DreamObject?>(_refValue);
 
-        return _floatValue.GetHashCode();
+                return HashCode.Combine(Type, dreamObject?.Deleted == false ? dreamObject.RefId : 0);
+            }
+            case 0:
+                return 0;
+            default:
+                return HashCode.Combine(Type, _refValue);
+        }
     }
 
     public static bool operator ==(DreamValue a, DreamValue b) {

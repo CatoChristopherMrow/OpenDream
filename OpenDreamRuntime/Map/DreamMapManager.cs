@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Runtime.InteropServices;
 using DMCompiler.Json;
 using OpenDreamRuntime.Objects;
 using OpenDreamRuntime.Objects.Types;
@@ -75,12 +76,7 @@ public sealed partial class DreamMapManager : IDreamMapManager {
             if (level.QueuedTileUpdates.Count == 0)
                 continue;
 
-            List<(Vector2i, Tile)> tiles = new(level.QueuedTileUpdates.Count);
-            foreach (var tileUpdate in level.QueuedTileUpdates) {
-                tiles.Add(tileUpdate);
-            }
-
-            _mapSystem.SetTiles(level.Grid, tiles);
+            _mapSystem.SetTiles(level.Grid, level.QueuedTileUpdates);
             level.QueuedTileUpdates.Clear();
         }
     }
@@ -271,14 +267,18 @@ public sealed partial class DreamMapManager : IDreamMapManager {
     }
 
     public DreamList CreateTurfsBlock(int startX, int startY, int startZ, int endX, int endY, int endZ) {
-        var values = new List<DreamValue>((endX - startX + 1) * (endY - startY + 1) * (endZ - startZ + 1));
+        int valueCount = (endX - startX + 1) * (endY - startY + 1) * (endZ - startZ + 1);
+        var values = new List<DreamValue>(valueCount);
+        CollectionsMarshal.SetCount(values, valueCount);
+        var valueSpan = CollectionsMarshal.AsSpan(values);
+        var valueIndex = 0;
 
         for (int z = startZ; z <= endZ; z++) {
             var cells = _levels[z - 1].Cells;
 
             for (int y = startY; y <= endY; y++) {
                 for (int x = startX; x <= endX; x++) {
-                    values.Add(new(cells[x - 1, y - 1].Turf));
+                    valueSpan[valueIndex++] = new(cells[x - 1, y - 1].Turf);
                 }
             }
         }

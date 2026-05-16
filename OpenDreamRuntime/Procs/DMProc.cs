@@ -1073,10 +1073,11 @@ public sealed class DMProcState : ProcState {
 
     [MustDisposeResource]
     public DreamValue DereferenceField(DreamValue owner, string field) {
-        if (owner.IsDeletedDreamObject)
-            return DreamValue.Null;
+        if (owner.Type == DreamValue.DreamValueType.DreamObject) {
+            var ownerObj = owner.MustGetValueAsDreamObject();
+            if (ownerObj == null)
+                return DreamValue.Null;
 
-        if (owner.TryGetValueAsDreamObject<DreamObject>(out var ownerObj)) {
             if (!ownerObj.TryGetVariable(field, out var fieldValue))
                 ThrowTypeHasNoField(field, ownerObj);
 

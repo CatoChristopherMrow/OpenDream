@@ -208,6 +208,14 @@ public class DreamList : DreamObject, IDreamList {
             _values[keyInteger - 1] = value;
             _valueSet = null;
         } else {
+            if (_associativeValues?.TryGetValue(key, out var oldValue) is true) {
+                value.IncRef();
+                oldValue.DecRef();
+                _associativeValues[key] = value;
+                UpdateTracyContentsMemory();
+                return;
+            }
+
             if (!ContainsValue(key)) {
                 _values.Add(key);
                 _valueSet?.Add(key);
@@ -216,8 +224,6 @@ public class DreamList : DreamObject, IDreamList {
 
             _associativeValues ??= new Dictionary<DreamValue, DreamValue>(1);
             value.IncRef();
-            if (_associativeValues.TryGetValue(key, out var oldValue))
-                oldValue.DecRef();
             _associativeValues[key] = value;
         }
 
@@ -1170,10 +1176,18 @@ public sealed class DreamVisContentsList : DreamList {
 // Operates on an object's appearance
 public sealed class DreamFilterList(DreamObjectDefinition listDef, DreamObject owner) : DreamList(listDef, 0) {
     public override void Cut(int start = 1, int end = 0) {
-        AtomManager.UpdateAppearance(owner, appearance => {
-            int filterCount = appearance.Filters.Count + 1;
-            if (end == 0 || end > filterCount) end = filterCount;
+        start = start switch {
+            < 0 => throw new ArgumentOutOfRangeException(nameof(start), start, "Parameter start is less than zero."),
+            0 => 1,
+            _ => start
+        };
 
+        int filterCount = GetAppearance().Filters.Length + 1;
+        if (end == 0 || end > filterCount) end = filterCount;
+        if (end <= start)
+            return;
+
+        AtomManager.UpdateAppearance(owner, appearance => {
             appearance.Filters.RemoveRange(start - 1, end - start);
         });
     }
