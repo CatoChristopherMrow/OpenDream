@@ -1175,6 +1175,22 @@ public sealed class DreamVisContentsList : DreamList {
 // atom.filters list
 // Operates on an object's appearance
 public sealed class DreamFilterList(DreamObjectDefinition listDef, DreamObject owner) : DreamList(listDef, 0) {
+    private DreamFilter CopyFilter(DreamFilter filter) {
+        if (filter is DreamFilterColor color) {
+            return new DreamFilterColor {
+                FilterType = color.FilterType,
+                FilterName = color.FilterName,
+                Color = new ColorMatrix(color.Color),
+                Space = color.Space
+            };
+        }
+
+        //This is dynamic to prevent the compiler from optimising the SerializationManager.CreateCopy() call to the DreamFilter type
+        //so we can preserve the subclass information. Setting it to DreamFilter instead will cause filter parameters to stop working.
+        dynamic dynamicFilter = filter;
+        return SerializationManager.CreateCopy(dynamicFilter, notNullableOverride: true); // Adding a filter creates a copy
+    }
+
     public override void Cut(int start = 1, int end = 0) {
         start = start switch {
             < 0 => throw new ArgumentOutOfRangeException(nameof(start), start, "Parameter start is less than zero."),
@@ -1282,10 +1298,7 @@ public sealed class DreamFilterList(DreamObjectDefinition listDef, DreamObject o
         if (!value.TryGetValueAsDreamObject<DreamObjectFilter>(out var filterObject))
             throw new Exception($"Cannot add {value} to filter list");
 
-        //This is dynamic to prevent the compiler from optimising the SerializationManager.CreateCopy() call to the DreamFilter type
-        //so we can preserve the subclass information. Setting it to DreamFilter instead will cause filter parameters to stop working.
-        dynamic filter = filterObject.Filter;
-        DreamFilter copy = SerializationManager.CreateCopy(filter, notNullableOverride: true); // Adding a filter creates a copy
+        DreamFilter copy = CopyFilter(filterObject.Filter);
 
         DreamObjectFilter.FilterAttachedTo[copy] = this;
         AtomManager.UpdateAppearance(owner, appearance => {

@@ -1128,11 +1128,7 @@ internal static class DreamProcNativeRoot {
     }
 
     private static DreamValue CreateIconStatesList(NativeProc.Bundle bundle, IEnumerable<string> states) {
-        string[] statesArray = states.Contains(string.Empty)
-            ? states.ToArray()
-            : states.Prepend(string.Empty).ToArray();
-
-        return new DreamValue(bundle.ObjectTree.CreateList(statesArray));
+        return new DreamValue(bundle.ObjectTree.CreateList(states.ToArray()));
     }
 
     [DreamProc("image")]
@@ -2415,14 +2411,16 @@ internal static class DreamProcNativeRoot {
 
             //Insert the replacement after each char except the last char
             //TODO: Properly support non-default start/end values
-            StringBuilder result = new StringBuilder();
-            var pos = 0;
-            while (pos + 1 <= text.Length) {
-                result.Append(text[pos]).Append(arg3);
-                pos += 1;
+            if (text.Length == 0) {
+                return DreamValue.EmptyString;
             }
 
-            result.Append(text[pos]);
+            StringBuilder result = new StringBuilder();
+            for (var pos = 0; pos < text.Length; pos++) {
+                result.Append(text[pos]);
+                if (pos < text.Length - 1)
+                    result.Append(replacement);
+            }
             return new DreamValue(result.ToString());
         }
 

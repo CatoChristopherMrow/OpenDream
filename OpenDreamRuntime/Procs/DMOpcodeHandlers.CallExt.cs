@@ -115,9 +115,8 @@ internal static partial class DMOpcodeHandlers {
 
             var retString = Marshal.PtrToStringUTF8((nint)ret) ?? string.Empty;
             if (procName == "dmi_read_metadata") {
-                var normalized = NormalizeDmiMetadata(retString);
-                retString = normalized != retString || !TryCreateDmiMetadataFallback(state, arguments.GetArgument(0), out var fallback)
-                    ? normalized
+                retString = LooksLikeDmiMetadata(retString) || !TryCreateDmiMetadataFallback(state, arguments.GetArgument(0), out var fallback)
+                    ? retString
                     : fallback;
             }
 
@@ -132,29 +131,15 @@ internal static partial class DMOpcodeHandlers {
         }
     }
 
-    private static string NormalizeDmiMetadata(string metadata) {
-        JsonNode? root;
+    private static bool LooksLikeDmiMetadata(string metadata) {
         try {
-            root = JsonNode.Parse(metadata);
+            if (JsonNode.Parse(metadata) is JsonObject metadataObject && metadataObject["states"] is JsonArray)
+                return true;
         } catch (JsonException) {
-            return metadata;
+            return false;
         }
 
-        if (root is not JsonObject metadataObject || metadataObject["states"] is not JsonArray states)
-            return metadata;
-
-        foreach (var state in states) {
-            if (state?["name"]?.GetValue<string>() == string.Empty)
-                return metadata;
-        }
-
-        var defaultState = new JsonObject {
-            ["name"] = string.Empty,
-            ["dirs"] = 1
-        };
-
-        states.Insert(0, defaultState);
-        return metadataObject.ToJsonString();
+        return false;
     }
 
     private static bool TryCreateDmiMetadataFallback(DMProcState state, DreamValue metadataArgument, out string metadata) {

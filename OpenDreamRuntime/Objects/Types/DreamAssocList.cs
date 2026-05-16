@@ -86,8 +86,11 @@ public sealed class DreamAssocList(DreamObjectDefinition aListDef, int size) : D
     }
 
     public void RemoveValue(DreamValue value) {
-        _values.Remove(value);
+        if (!_values.Remove(value, out var associatedValue))
+            return;
+
         value.DecRef();
+        associatedValue.DecRef();
     }
 
     public IEnumerable<KeyValuePair<DreamValue, DreamValue>> EnumerateAssocValues() {
@@ -112,6 +115,19 @@ public sealed class DreamAssocList(DreamObjectDefinition aListDef, int size) : D
 
         _values[value] = DreamValue.Null;
         value.IncRef();
+    }
+
+    public override DreamValue OperatorRemove(DreamValue b) {
+        if (b.TryGetValueAsIDreamList(out var bList)) {
+            foreach (DreamValue value in bList.EnumerateValues().ToArray()) {
+                RemoveValue(value);
+            }
+        } else {
+            RemoveValue(b);
+        }
+
+        IncRef();
+        return new(this);
     }
 
     public IDreamList CreateCopy(int start = 1, int end = 0) {
