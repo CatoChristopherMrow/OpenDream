@@ -35,7 +35,7 @@ namespace OpenDreamRuntime.Procs.Native {
             dreamRegex.SetVariable("text", haystack);
 
             if (end == 0) end = haystackString.Length;
-            if (haystackString.Length <= next - 1) {
+            if (haystackString.Length < next - 1) {
                 if (dreamRegex.IsGlobal) {
                     dreamRegex.SetVariable("next", DreamValue.Null);
                 }
@@ -76,7 +76,7 @@ namespace OpenDreamRuntime.Procs.Native {
                     var groups = match.Groups;
                     var args = new DreamValue[groups.Count];
                     for (int i = 0; i < groups.Count; i++) {
-                        args[i] = new DreamValue(groups[i].Value);
+                        args[i] = i == 0 ? new DreamValue(groups[i].Value) : DreamObjectRegex.CaptureGroupToDreamValue(groups[i]);
                     }
 
                     // TODO: src is the regex string

@@ -89,7 +89,7 @@ public sealed class DreamObjectRegex(DreamObjectDefinition objectDefinition) : D
                 DreamList groupList = ObjectTree.CreateList(match.Groups.Count);
 
                 for (int i = 1; i < match.Groups.Count; i++) {
-                    groupList.AddValue(new DreamValue(match.Groups[i].Value));
+                    groupList.AddValue(CaptureGroupToDreamValue(match.Groups[i]));
                 }
 
                 SetVariable("group", new DreamValue(groupList));
@@ -108,5 +108,9 @@ public sealed class DreamObjectRegex(DreamObjectDefinition objectDefinition) : D
         }
 
         return new DreamValue(0);
+    }
+
+    public static DreamValue CaptureGroupToDreamValue(Group group) {
+        return group.Success && group.Length > 0 ? new DreamValue(group.Value) : DreamValue.Null;
     }
 }

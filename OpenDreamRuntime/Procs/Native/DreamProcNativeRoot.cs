@@ -2531,7 +2531,7 @@ internal static class DreamProcNativeRoot {
         } else {
             bundle.GetArgument(1, "B").TryGetValueAsFloat(out var b);
 
-            return new DreamValue((float)Math.Round(a / b) * b);
+            return new DreamValue((float)Math.Round(a / b, MidpointRounding.AwayFromZero) * b);
         }
     }
 

@@ -28,7 +28,7 @@
 	var/icon_z = 0
 
 	var/icon = null
-	var/icon_state = ""
+	var/icon_state = null
 	var/layer = 2.0
 	var/plane = 0
 	var/alpha = 255
