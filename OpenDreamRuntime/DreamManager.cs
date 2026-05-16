@@ -29,6 +29,9 @@ public sealed partial class DreamManager {
     // Global state that may not really (really really) belong here
     public DreamValue[] Globals { get; set; } = Array.Empty<DreamValue>();
     public List<string> GlobalNames { get; private set; } = new();
+    private int?[] _globalInitProcs = Array.Empty<int?>();
+    private bool[] _globalInitialized = Array.Empty<bool>();
+    private bool[] _globalInitializing = Array.Empty<bool>();
     public HashSet<DreamObject> Clients { get; } = new();
 
     public IRobustRandom Random { get; } = new RobustRandom();
@@ -167,12 +170,22 @@ public sealed partial class DreamManager {
         if (json.Globals is { } jsonGlobals) {
             Globals = new DreamValue[jsonGlobals.GlobalCount];
             GlobalNames = jsonGlobals.Names;
+            _globalInitProcs = new int?[jsonGlobals.GlobalCount];
+            _globalInitialized = new bool[jsonGlobals.GlobalCount];
+            _globalInitializing = new bool[jsonGlobals.GlobalCount];
+
+            if (jsonGlobals.InitProcs != null) {
+                foreach (var (globalId, procId) in jsonGlobals.InitProcs) {
+                    _globalInitProcs[globalId] = procId;
+                }
+            }
 
             for (int i = 0; i < jsonGlobals.GlobalCount; i++) {
                 var globalJson = ((IReadOnlyDictionary<int, object?>) jsonGlobals.Globals).GetValueOrDefault(i, null);
                 using var globalValue = _objectTree.GetDreamValueFromJsonElement(globalJson);
 
                 SetGlobal(i, globalValue);
+                _globalInitialized[i] = _globalInitProcs[i] == null;
             }
         }
 
@@ -262,5 +275,28 @@ public sealed partial class DreamManager {
         value.IncRef();
         Globals[id].Dispose();
         Globals[id] = value;
+
+        if ((uint)id < (uint)_globalInitialized.Length)
+            _globalInitialized[id] = true;
+    }
+
+    public DreamValue GetGlobal(int id) {
+        if ((uint)id < (uint)_globalInitProcs.Length &&
+            !_globalInitialized[id] &&
+            !_globalInitializing[id] &&
+            _globalInitProcs[id] is { } initProcId) {
+            _globalInitializing[id] = true;
+
+            try {
+                using var _ = DreamThread.Run(_objectTree.Procs[initProcId], WorldInstance, null);
+                _globalInitialized[id] = true;
+            } finally {
+                _globalInitializing[id] = false;
+            }
+        }
+
+        var global = Globals[id];
+        global.IncRef();
+        return global;
     }
 }

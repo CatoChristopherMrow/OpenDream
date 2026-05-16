@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Runtime.CompilerServices;
 using System.Text;
 using DMCompiler.Bytecode;
@@ -388,6 +389,7 @@ public sealed class DMProcState : ProcState {
     private int _pc;
     private readonly Stack<int> _catchPosition = new();
     private readonly Stack<int> _catchVarIndex = new();
+    private ProcArgsList? _argsList;
 
     /// Contains both arguments (at index 0) and local vars (at index ArgumentCount)
     private readonly DreamValue[] _localVariables = new DreamValue[256];
@@ -613,6 +615,8 @@ public sealed class DMProcState : ProcState {
         Instance = null;
         Usr?.DecRef();
         Usr = null;
+        _argsList?.DecRef();
+        _argsList = null;
         Array.Clear(Enumerators);
         Array.Clear(_localVariables, 0, ArgumentCount + _proc.LocalCount);
         ArgumentCount = 0;
@@ -924,10 +928,7 @@ public sealed class DMProcState : ProcState {
                 Result.IncRef();
                 return Result;
             case DMReference.Type.Global:
-                var global = DreamManager.Globals[reference.Value];
-
-                global.IncRef();
-                return global;
+                return DreamManager.GetGlobal(reference.Value);
             case DMReference.Type.Argument:
                 var argument = _localVariables[reference.Value];
 
@@ -939,7 +940,9 @@ public sealed class DMProcState : ProcState {
                 local.IncRef();
                 return local;
             case DMReference.Type.Args:
-                return new(new ProcArgsList(Proc.ObjectTree.List.ObjectDefinition, this));
+                _argsList ??= new ProcArgsList(Proc.ObjectTree.List.ObjectDefinition, this);
+                _argsList.IncRef();
+                return new(_argsList);
             case DMReference.Type.World:
                 DreamManager.WorldInstance.IncRef();
                 return new(DreamManager.WorldInstance);
@@ -1060,8 +1063,29 @@ public sealed class DMProcState : ProcState {
                 ThrowInvalidAppearanceVar(field);
 
             return Proc.AtomManager.GetAppearanceVar(appearance, field);
-        } else if (owner.TryGetValueAsType(out var ownerType) && ownerType.ObjectDefinition.Variables.TryGetValue(field, out var val)) {
-            return val; // equivalent to initial()
+        } else if (owner.TryGetValueAsDreamResource(out var resource)) {
+            switch (field) {
+                case "hash":
+                    return resource.ResourceData is { } data
+                        ? new DreamValue(Convert.ToHexString(MD5.HashData(data)).ToLowerInvariant())
+                        : DreamValue.Null;
+                case "name":
+                    return new DreamValue(resource.ResourcePath ?? string.Empty);
+            }
+        } else if (owner.TryGetValueAsType(out var ownerType)) {
+            switch (field) {
+                case "type":
+                    return new DreamValue(ownerType);
+                case "parent_type":
+                    return ownerType.ObjectDefinition.Parent?.TreeEntry is { } parent && parent != Proc.ObjectTree.Root
+                        ? new DreamValue(parent)
+                        : DreamValue.Null;
+                default:
+                    if (ownerType.ObjectDefinition.Variables.TryGetValue(field, out var val))
+                        return val; // equivalent to initial()
+
+                    break;
+            }
         }
 
         ThrowCannotGetFieldFromOwner(owner, field);

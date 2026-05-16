@@ -1,6 +1,10 @@
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using JetBrains.Annotations;
+using OpenDreamShared.Dream;
+using OpenDreamShared.Resources;
 using OpenDreamRuntime.Objects.Types;
 using OpenDreamRuntime.Resources;
 using Api = OpenDreamRuntime.ByondApi.ByondApi;
@@ -110,8 +114,12 @@ internal static partial class DMOpcodeHandlers {
             }
 
             var retString = Marshal.PtrToStringUTF8((nint)ret) ?? string.Empty;
-            if (procName == "dmi_read_metadata")
-                retString = NormalizeDmiMetadata(retString);
+            if (procName == "dmi_read_metadata") {
+                var normalized = NormalizeDmiMetadata(retString);
+                retString = normalized != retString || !TryCreateDmiMetadataFallback(state, arguments.GetArgument(0), out var fallback)
+                    ? normalized
+                    : fallback;
+            }
 
             state.Push(new DreamValue(retString));
             return ProcStatus.Continue;
@@ -125,7 +133,13 @@ internal static partial class DMOpcodeHandlers {
     }
 
     private static string NormalizeDmiMetadata(string metadata) {
-        var root = JsonNode.Parse(metadata);
+        JsonNode? root;
+        try {
+            root = JsonNode.Parse(metadata);
+        } catch (JsonException) {
+            return metadata;
+        }
+
         if (root is not JsonObject metadataObject || metadataObject["states"] is not JsonArray states)
             return metadata;
 
@@ -141,5 +155,45 @@ internal static partial class DMOpcodeHandlers {
 
         states.Insert(0, defaultState);
         return metadataObject.ToJsonString();
+    }
+
+    private static bool TryCreateDmiMetadataFallback(DMProcState state, DreamValue metadataArgument, out string metadata) {
+        metadata = string.Empty;
+
+        var resourcePath = metadataArgument.Stringify();
+        switch (Path.GetExtension(resourcePath)) {
+            case ".png":
+            case ".bmp":
+                break;
+            default:
+                return false;
+        }
+
+        if (!state.Proc.DreamResourceManager.TryLoadIcon(metadataArgument, out var icon))
+            return false;
+
+        metadata = DmiMetadataToJson(icon.DMI);
+        return true;
+    }
+
+    private static string DmiMetadataToJson(DMIParser.ParsedDMIDescription description) {
+        var states = new JsonArray();
+
+        foreach (var parsedState in description.States.Values) {
+            var directions = DMIParser.GetExportedDirectionCount(parsedState.Directions);
+            var frames = parsedState.GetFrames(AtomDirection.South).Length;
+
+            states.Add(new JsonObject {
+                ["name"] = parsedState.Name,
+                ["dirs"] = directions,
+                ["frames"] = frames
+            });
+        }
+
+        return new JsonObject {
+            ["width"] = description.Width,
+            ["height"] = description.Height,
+            ["states"] = states
+        }.ToJsonString();
     }
 }

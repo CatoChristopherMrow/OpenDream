@@ -26,4 +26,5 @@ public sealed class GlobalListJson {
     public int GlobalCount { get; set; }
     public required List<string> Names { get; set; }
     public required Dictionary<int, object> Globals { get; set; }
+    public Dictionary<int, int>? InitProcs { get; set; }
 }

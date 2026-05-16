@@ -65,6 +65,16 @@ internal partial class DMCodeTree {
             dmObject.InitializationProcAssignments.Add((variable.Name, assign));
         }
 
+        protected void EmitGlobalInitializerProc(DMCompiler compiler, DMObject dmObject, DMVariable global, int globalId, DMExpression value) {
+            var initProc = compiler.DMObjectTree.CreateDMProc(dmObject, null);
+            initProc.DebugSource(value.Location);
+            value.EmitPushValue(new(compiler, dmObject, initProc));
+            initProc.Assign(DMReference.CreateGlobal(globalId));
+            initProc.Pop();
+
+            global.InitProc = initProc.Id;
+        }
+
         /// <returns>Whether the given value can be used as an instance variable's initial value</returns>
         private bool IsValidRightHandSide(DMCompiler compiler, DMObject dmObject, DMExpression value) {
             return value switch {
@@ -143,12 +153,17 @@ internal partial class DMCodeTree {
                 compiler.Emit(WarningCode.HardConstContext, value.Location, "Constant initializer required");
             }
 
-            // Initialize its value in the global init proc
-            compiler.VerbosePrint($"Adding {dmObject.Path}/var/static/{global.Name} to global init on pass {pass}");
-            compiler.GlobalInitProc.DebugSource(value.Location);
-            value.EmitPushValue(new(compiler, dmObject, compiler.GlobalInitProc));
-            compiler.GlobalInitProc.Assign(DMReference.CreateGlobal(globalId));
-            compiler.GlobalInitProc.Pop();
+            if (dmObject == compiler.DMObjectTree.Root || global.ValType.TypePath != DreamPath.MutableAppearance) {
+                compiler.VerbosePrint($"Adding {dmObject.Path}/var/static/{global.Name} to global init on pass {pass}");
+                compiler.GlobalInitProc.DebugSource(value.Location);
+                value.EmitPushValue(new(compiler, dmObject, compiler.GlobalInitProc));
+                compiler.GlobalInitProc.Assign(DMReference.CreateGlobal(globalId));
+                compiler.GlobalInitProc.Pop();
+            } else {
+                compiler.VerbosePrint($"Adding lazy initializer for {dmObject.Path}/var/static/{global.Name} on pass {pass}");
+                EmitGlobalInitializerProc(compiler, dmObject, global, globalId, value);
+            }
+
             return true;
         }
 

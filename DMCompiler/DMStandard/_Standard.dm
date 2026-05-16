@@ -17,10 +17,10 @@ proc/copytext(T, Start = 1, End = 0) as text|null
 proc/copytext_char(T,Start=1,End=0) as text|null
 proc/CRASH(msg) as null
 proc/fcopy(Src, Dst) as num
-proc/fcopy_rsc(File) as num|null
+proc/fcopy_rsc(File) as /file|null
 proc/fdel(File) as num
 proc/fexists(File) as num
-proc/file(Path)
+proc/file(Path) as /file
 proc/file2text(File) as text|null
 proc/filter(type, ...)
 proc/findtext(Haystack, Needle, Start = 1, End = 0) as num
@@ -144,6 +144,7 @@ proc/winset(player, control_id, params)
 #include "Types\Database.dm"
 #include "Types\Datum.dm"
 #include "Types\Exception.dm"
+#include "Types\File.dm"
 #include "Types\Filter.dm"
 #include "Types\Generator.dm"
 #include "Types\Icon.dm"
