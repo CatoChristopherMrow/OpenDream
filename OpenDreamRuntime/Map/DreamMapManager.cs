@@ -270,6 +270,22 @@ public sealed partial class DreamMapManager : IDreamMapManager {
         return false;
     }
 
+    public DreamList CreateTurfsBlock(int startX, int startY, int startZ, int endX, int endY, int endZ) {
+        var values = new List<DreamValue>((endX - startX + 1) * (endY - startY + 1) * (endZ - startZ + 1));
+
+        for (int z = startZ; z <= endZ; z++) {
+            var cells = _levels[z - 1].Cells;
+
+            for (int y = startY; y <= endY; y++) {
+                for (int x = startX; x <= endX; x++) {
+                    values.Add(new(cells[x - 1, y - 1].Turf));
+                }
+            }
+        }
+
+        return new DreamList(_objectTree.List.ObjectDefinition, values, null);
+    }
+
     //Returns an area loaded by a DMM
     //Does not include areas created by DM code
     private DreamObjectArea GetOrCreateArea(MapObjectJson prototype) {
@@ -544,6 +560,7 @@ public interface IDreamMapManager {
     public void SetAreaAppearance(DreamObjectArea area, MutableAppearance appearance);
     public bool TryGetCellAt(Vector2i pos, int z, [NotNullWhen(true)] out Cell? cell);
     public bool TryGetTurfAt(Vector2i pos, int z, [NotNullWhen(true)] out DreamObjectTurf? turf);
+    public DreamList CreateTurfsBlock(int startX, int startY, int startZ, int endX, int endY, int endZ);
     public void SetZLevels(int levels);
     public void SetWorldSize(Vector2i size);
     public EntityUid GetZLevelEntity(int z);

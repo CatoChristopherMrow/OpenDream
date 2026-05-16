@@ -106,20 +106,8 @@ internal static class DreamProcNativeRoot {
             return objectTree.CreateList();
         }
 
-        DreamList turfs = objectTree.CreateList((endX - startX + 1) * (endY - startY + 1) * (endZ - startZ + 1));
-
         // Collected in z-y-x order
-        for (int z = startZ; z <= endZ; z++) {
-            for (int y = startY; y <= endY; y++) {
-                for (int x = startX; x <= endX; x++) {
-                    if (mapManager.TryGetTurfAt((x, y), z, out var turf)) {
-                        turfs.AddValue(new DreamValue(turf));
-                    }
-                }
-            }
-        }
-
-        return turfs;
+        return mapManager.CreateTurfsBlock(startX, startY, startZ, endX, endY, endZ);
     }
 
     [DreamProc("block")]

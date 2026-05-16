@@ -14,6 +14,7 @@ using OpenDreamRuntime.Objects.Types;
 using OpenDreamRuntime.Procs.DebugAdapter;
 using OpenDreamRuntime.Resources;
 using OpenDreamShared.Dream;
+using Robust.Shared.Log;
 using Robust.Shared.Utility;
 
 namespace OpenDreamRuntime.Procs;
@@ -390,6 +391,8 @@ public sealed class DMProcState : ProcState {
     private readonly Stack<int> _catchPosition = new();
     private readonly Stack<int> _catchVarIndex = new();
     private ProcArgsList? _argsList;
+    private static readonly int SlowProcLogMs = int.TryParse(Environment.GetEnvironmentVariable("OPENDREAM_SLOW_PROC_MS"), out var slowProcMs) ? slowProcMs : 0;
+    private static long _nextSlowProcLogTick;
 
     /// Contains both arguments (at index 0) and local vars (at index ArgumentCount)
     private readonly DreamValue[] _localVariables = new DreamValue[256];
@@ -453,6 +456,11 @@ public sealed class DMProcState : ProcState {
     }
 
     public override unsafe ProcStatus Resume() {
+        long startTimestamp = 0;
+        if (SlowProcLogMs > 0)
+            startTimestamp = Stopwatch.GetTimestamp();
+
+        try {
         if (Instance?.Deleted == true) {
             Instance = null;
             return ProcStatus.Returned;
@@ -493,6 +501,23 @@ public sealed class DMProcState : ProcState {
         }
 
         return ProcStatus.Returned;
+        } finally {
+            if (SlowProcLogMs > 0) {
+                double elapsedMs = (Stopwatch.GetTimestamp() - startTimestamp) * 1000.0 / Stopwatch.Frequency;
+                long currentTick = Environment.TickCount64;
+
+                if (elapsedMs >= SlowProcLogMs && currentTick >= _nextSlowProcLogTick) {
+                    _nextSlowProcLogTick = currentTick + 2000;
+
+                    var builder = new StringBuilder();
+                    builder.Append("Slow DM proc resume took ");
+                    builder.Append(elapsedMs.ToString("F2"));
+                    builder.AppendLine(" ms");
+                    Thread.AppendStackTrace(builder);
+                    Logger.GetSawmill("opendream.slow_proc").Warning(builder.ToString());
+                }
+            }
+        }
     }
 
     public override void ReturnedInto(DreamValue value) {
@@ -1320,15 +1345,15 @@ public sealed class DMProcState : ProcState {
                         proc = _state.Proc.DreamManager.ImageConstructor;
 
                     DreamProc targetProc = proc ?? throw new Exception("Cannot use an arglist here");
-                    var listValues = argList.EnumerateValues().ToList();
-                    var arguments = new DreamValue[Math.Max(listValues.Count, targetProc.ArgumentNames?.Count ?? 0)];
+                    var listValueCount = argList.GetLength();
+                    var arguments = new DreamValue[Math.Max(listValueCount, targetProc.ArgumentNames?.Count ?? 0)];
                     var skippingArg = false;
                     var isImageConstructor = targetProc == _state.Proc.DreamManager.ImageConstructor ||
                                              targetProc == _state.Proc.DreamManager.ImageFactoryProc;
 
                     Array.Fill(arguments, DreamValue.Null);
-                    for (int i = 0; i < listValues.Count; i++) {
-                        var value = listValues[i];
+                    var i = 0;
+                    foreach (var value in argList.EnumerateValues()) {
 
                         if (argList.ContainsKey(value)) { //Named argument
                             if (!value.TryGetValueAsString(out var argumentName))
@@ -1351,6 +1376,8 @@ public sealed class DMProcState : ProcState {
                             arguments[skippingArg ? i + 1 : i] = value;
                             value.IncRef();
                         }
+
+                        i++;
                     }
 
                     var procArgs = new DreamProcArguments(arguments);

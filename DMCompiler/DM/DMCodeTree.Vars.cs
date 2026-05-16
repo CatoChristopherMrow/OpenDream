@@ -153,7 +153,7 @@ internal partial class DMCodeTree {
                 compiler.Emit(WarningCode.HardConstContext, value.Location, "Constant initializer required");
             }
 
-            if (dmObject == compiler.DMObjectTree.Root || global.ValType.TypePath != DreamPath.MutableAppearance) {
+            if (dmObject == compiler.DMObjectTree.Root || global.Type != DreamPath.MutableAppearance) {
                 compiler.VerbosePrint($"Adding {dmObject.Path}/var/static/{global.Name} to global init on pass {pass}");
                 compiler.GlobalInitProc.DebugSource(value.Location);
                 value.EmitPushValue(new(compiler, dmObject, compiler.GlobalInitProc));

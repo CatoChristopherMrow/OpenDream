@@ -21,6 +21,7 @@ public class DreamList : DreamObject, IDreamList {
 
     private readonly List<DreamValue> _values;
     private Dictionary<DreamValue, DreamValue>? _associativeValues;
+    private HashSet<DreamValue>? _valueSet;
 
     #if TOOLS
     private ProfilerMemory? _tracyContentsMemoryId;
@@ -104,6 +105,7 @@ public class DreamList : DreamObject, IDreamList {
 
         if (_values.Capacity > DreamManager.ListPoolThreshold && ListPool.Count < DreamManager.ListPoolSize) {
             _values.Clear();
+            _valueSet?.Clear();
             ListPool.Push(_values);
         }
 
@@ -143,6 +145,12 @@ public class DreamList : DreamObject, IDreamList {
 
     public virtual IEnumerable<DreamValue> EnumerateValues() {
         return _values;
+    }
+
+    public virtual DreamValue[] CopyToArray() {
+        return GetType() == typeof(DreamList)
+            ? _values.ToArray()
+            : EnumerateValues().ToArray();
     }
 
     public IEnumerable<KeyValuePair<DreamValue, DreamValue>> EnumerateAssocValues() {
@@ -198,9 +206,11 @@ public class DreamList : DreamObject, IDreamList {
             value.IncRef();
             _values[keyInteger - 1].DecRef();
             _values[keyInteger - 1] = value;
+            _valueSet = null;
         } else {
             if (!ContainsValue(key)) {
                 _values.Add(key);
+                _valueSet?.Add(key);
                 key.IncRef();
             }
 
@@ -224,6 +234,7 @@ public class DreamList : DreamObject, IDreamList {
             }
 
             _values.RemoveAt(valueIndex);
+            _valueSet = null;
             value.DecRef();
         }
 
@@ -232,12 +243,21 @@ public class DreamList : DreamObject, IDreamList {
 
     public virtual void AddValue(DreamValue value) {
         _values.Add(value);
+        _valueSet?.Add(value);
         value.IncRef();
         UpdateTracyContentsMemory();
     }
 
     //Does not include associations
     public virtual bool ContainsValue(DreamValue value) {
+        if (_valueSet != null)
+            return _valueSet.Contains(value);
+
+        if (_values.Count >= 64) {
+            _valueSet = new HashSet<DreamValue>(_values);
+            return _valueSet.Contains(value);
+        }
+
         for (int i = 0; i < _values.Count; i++) {
             if (_values[i].Equals(value))
                 return true;
@@ -284,6 +304,7 @@ public class DreamList : DreamObject, IDreamList {
             }
 
             _values.RemoveRange(start - 1, end - start);
+            _valueSet = null;
         }
 
         UpdateTracyContentsMemory();
@@ -291,6 +312,7 @@ public class DreamList : DreamObject, IDreamList {
 
     public void Insert(int index, DreamValue value) {
         _values.Insert(index - 1, value);
+        _valueSet = null;
         value.IncRef();
         UpdateTracyContentsMemory();
     }
@@ -960,6 +982,28 @@ public sealed class DreamOverlaysList(DreamObjectDefinition listDef, DreamObject
         });
     }
 
+    public void ReplaceWith(DreamValue value) {
+        if (appearanceSystem == null)
+            return;
+
+        var ownerAppearance = AtomManager.MustGetAppearance(owner);
+        var replacementOverlays = new List<ImmutableAppearance>();
+
+        if (value.TryGetValueAsDreamList(out var valueList)) {
+            foreach (DreamValue overlayValue in valueList.EnumerateValues()) {
+                AddReplacementOverlay(overlayValue, ownerAppearance.Icon, replacementOverlays);
+            }
+        } else if (!value.IsNull) {
+            AddReplacementOverlay(value, ownerAppearance.Icon, replacementOverlays);
+        }
+
+        AtomManager.UpdateAppearance(owner, appearance => {
+            var overlaysList = GetOverlaysList(appearance);
+            overlaysList.Clear();
+            overlaysList.AddRange(replacementOverlays);
+        });
+    }
+
     public override void RemoveValue(DreamValue value) {
         if (appearanceSystem == null)
             return;
@@ -989,6 +1033,13 @@ public sealed class DreamOverlaysList(DreamObjectDefinition listDef, DreamObject
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ImmutableAppearance[] GetOverlaysArray(ImmutableAppearance appearance) =>
         isUnderlays ? appearance.Underlays : appearance.Overlays;
+
+    private void AddReplacementOverlay(DreamValue value, int? defaultIcon, List<ImmutableAppearance> replacementOverlays) {
+        var overlayAppearance = CreateOverlayAppearance(AtomManager, value, defaultIcon);
+        var immutableOverlay = appearanceSystem!.AddAppearance(overlayAppearance ?? MutableAppearance.Default);
+        overlayAppearance?.Dispose();
+        replacementOverlays.Add(immutableOverlay);
+    }
 
     public static MutableAppearance? CreateOverlayAppearance(AtomManager atomManager, DreamValue value, int? defaultIcon) {
         MutableAppearance overlay;

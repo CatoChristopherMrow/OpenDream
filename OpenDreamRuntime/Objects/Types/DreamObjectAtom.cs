@@ -108,31 +108,11 @@ public class DreamObjectAtom(DreamObjectDefinition objectDefinition) : DreamObje
                 newAppearance.Dispose();
                 break;
             case "overlays": {
-                Overlays.Cut();
-
-                if (value.TryGetValueAsDreamList(out var valueList)) {
-                    // TODO: This should postpone UpdateAppearance until after everything is added
-                    foreach (DreamValue overlayValue in valueList.EnumerateValues()) {
-                        Overlays.AddValue(overlayValue);
-                    }
-                } else if (!value.IsNull) {
-                    Overlays.AddValue(value);
-                }
-
+                Overlays.ReplaceWith(value);
                 break;
             }
             case "underlays": {
-                Underlays.Cut();
-
-                if (value.TryGetValueAsDreamList(out var valueList)) {
-                    // TODO: This should postpone UpdateAppearance until after everything is added
-                    foreach (DreamValue underlayValue in valueList.EnumerateValues()) {
-                        Underlays.AddValue(underlayValue);
-                    }
-                } else if (!value.IsNull) {
-                    Underlays.AddValue(value);
-                }
-
+                Underlays.ReplaceWith(value);
                 break;
             }
             case "vis_contents": {

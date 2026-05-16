@@ -1,4 +1,5 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using JetBrains.Annotations;
 using OpenDreamRuntime.Map;
@@ -15,6 +16,46 @@ using Dependency = Robust.Shared.IoC.DependencyAttribute;
 namespace OpenDreamRuntime;
 
 public sealed partial class AtomManager {
+    private static readonly FrozenSet<string> AppearanceVars = new[] {
+        "name",
+        "desc",
+        "icon",
+        "icon_state",
+        "dir",
+        "pixel_x",
+        "pixel_y",
+        "pixel_w",
+        "pixel_z",
+        "icon_w",
+        "icon_z",
+        "color",
+        "layer",
+        "invisibility",
+        "opacity",
+        "mouse_opacity",
+        "plane",
+        "blend_mode",
+        "appearance_flags",
+        "alpha",
+        "glide_size",
+        "render_source",
+        "render_target",
+        "transform",
+        "appearance",
+        "verbs",
+        "overlays",
+        "underlays",
+        "maptext",
+        "maptext_width",
+        "maptext_height",
+        "maptext_x",
+        "maptext_y",
+        "mouse_drag_pointer",
+        "mouse_drop_pointer",
+        "mouse_drop_zone",
+        "mouse_over_pointer",
+    }.ToFrozenSet(StringComparer.Ordinal);
+
     public int AtomCount {
         get {
             ReadOnlySpan<RefType> atomTypes = [
@@ -124,51 +165,8 @@ public sealed partial class AtomManager {
     }
 
     public bool IsValidAppearanceVar(string name) {
-        switch (name) {
-            case "name":
-            case "desc":
-            case "icon":
-            case "icon_state":
-            case "dir":
-            case "pixel_x":
-            case "pixel_y":
-            case "pixel_w":
-            case "pixel_z":
-            case "icon_w":
-            case "icon_z":
-            case "color":
-            case "layer":
-            case "invisibility":
-            case "opacity":
-            case "mouse_opacity":
-            case "plane":
-            case "blend_mode":
-            case "appearance_flags":
-            case "alpha":
-            case "glide_size":
-            case "render_source":
-            case "render_target":
-            case "transform":
-            case "appearance":
-            case "verbs":
-            case "overlays":
-            case "underlays":
-            case "maptext":
-            case "maptext_width":
-            case "maptext_height":
-            case "maptext_x":
-            case "maptext_y":
-            case "mouse_drag_pointer":
-            case "mouse_drop_pointer":
-            case "mouse_drop_zone":
-            case "mouse_over_pointer":
-                return true;
-
-            // Get/SetAppearanceVar doesn't handle filters right now
-            case "filters":
-            default:
-                return false;
-        }
+        // Get/SetAppearanceVar doesn't handle filters right now
+        return AppearanceVars.Contains(name);
     }
 
     public void SetAppearanceVar(MutableAppearance appearance, string varName, DreamValue value) {
