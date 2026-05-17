@@ -750,7 +750,7 @@ namespace OpenDreamRuntime.Procs {
                         ? DreamValue.Null
                         : new DreamValue(objectDefinition.Parent.TreeEntry),
                 "type" => new DreamValue(objectDefinition.TreeEntry),
-                _ => objectDefinition.Variables.TryGetValue(property, out var val) ? val : DreamValue.Null
+                _ => objectDefinition.TryGetVariable(property, out var val) ? val : DreamValue.Null
             };
 
             state.Push(result);

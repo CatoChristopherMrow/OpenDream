@@ -40,3 +40,10 @@
 	// /regex can be used as a Needle
 	ASSERT(replacetext(str, new /regex("."), "G") == "GBCDEF");
 	ASSERT(replacetext(str, new /regex(".", "g"), "G") == "GGGGGG");
+
+	var/lizard_speech = "She is so sassy"
+	lizard_speech = replacetextEx(lizard_speech, new /regex("s+", "g"), "sss")
+	lizard_speech = replacetextEx(lizard_speech, new /regex("S+", "g"), "SSS")
+	ASSERT(lizard_speech == "SSShe isss ssso sssasssy")
+
+	ASSERT(replacetextEx("X-ray X box", new /regex(@"\bX([\-|r|R]|\b)", "g"), "ECKS$1") == "ECKS-ray ECKS box")

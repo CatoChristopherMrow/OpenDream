@@ -2398,13 +2398,24 @@ internal static class DreamProcNativeRoot {
     [DreamProcParameter("Start", Type = DreamValueTypeFlag.Float, DefaultValue = 1)]
     [DreamProcParameter("End", Type = DreamValueTypeFlag.Float, DefaultValue = 0)]
     public static DreamValue NativeProc_replacetextEx(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
-        if (!bundle.GetArgument(0, "Haystack").TryGetValueAsString(out var text)) {
+        DreamValue haystack = bundle.GetArgument(0, "Haystack");
+        DreamValue needleArg = bundle.GetArgument(1, "Needle");
+        DreamValue replacementArg = bundle.GetArgument(2, "Replacement");
+
+        bundle.GetArgument(3, "Start").TryGetValueAsInteger(out var start); //1-indexed
+        bundle.GetArgument(4, "End").TryGetValueAsInteger(out var end); //1-indexed
+
+        if (needleArg.TryGetValueAsDreamObject<DreamObjectRegex>(out var regexObject)) {
+            return DreamProcNativeRegex.RegexReplace(regexObject, haystack, replacementArg, start, end);
+        }
+
+        if (!haystack.TryGetValueAsString(out var text)) {
             return DreamValue.Null;
         }
 
-        var arg3 = bundle.GetArgument(2, "Replacement").TryGetValueAsString(out var replacement);
+        var arg3 = replacementArg.TryGetValueAsString(out var replacement);
 
-        if (!bundle.GetArgument(1, "Needle").TryGetValueAsString(out var needle)) {
+        if (!needleArg.TryGetValueAsString(out var needle)) {
             if (!arg3) {
                 return new DreamValue(text);
             }
@@ -2423,9 +2434,6 @@ internal static class DreamProcNativeRoot {
             }
             return new DreamValue(result.ToString());
         }
-
-        bundle.GetArgument(3, "Start").TryGetValueAsInteger(out var start); //1-indexed
-        bundle.GetArgument(4, "End").TryGetValueAsInteger(out var end); //1-indexed
 
         if (start == 0) { // Return unmodified
             return new(text);

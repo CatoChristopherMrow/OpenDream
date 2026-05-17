@@ -25,6 +25,9 @@
 	ASSERT(text2num("F.A", 16) == 15.625)
 	ASSERT(text2num("f.a", 16) == 15.625)
 	ASSERT(text2num("F.A", 15) == null)
+	ASSERT(text2num("a") == null)
+	ASSERT(text2num("ai") == null)
+	ASSERT(text2num("g", 16) == null)
 	ASSERT(text2num("Z.0", 36) == 35)
 
 	ASSERT(text2num("F..A", 16) == 15)
