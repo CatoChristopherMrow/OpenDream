@@ -29,8 +29,8 @@ public sealed class DreamObjectImage : DreamObject {
     public DreamObjectImage(DreamObjectDefinition objectDefinition) : base(objectDefinition) {
         if (objectDefinition.IsSubtypeOf(ObjectTree.MutableAppearance)) {
             // /mutable_appearance.overlays and /mutable_appearance.underlays are normal lists
-            _overlays = ObjectTree.CreateList();
-            _underlays = ObjectTree.CreateList();
+            _overlays = new DreamMutableAppearanceList(ObjectTree.List.ObjectDefinition, this, false);
+            _underlays = new DreamMutableAppearanceList(ObjectTree.List.ObjectDefinition, this, true);
             _filters = ObjectTree.CreateList();
             IsMutableAppearance = true;
         } else {
@@ -241,6 +241,11 @@ public sealed class DreamObjectImage : DreamObject {
                 break;
             }
             case "override": {
+                if (IsMutableAppearance) {
+                    MutableAppearance!.Override = value.IsTruthy();
+                    break;
+                }
+
                 using var mutableAppearance = IsMutableAppearance ? MutableAppearance! : AtomManager.MustGetAppearance(this).ToMutable();
                 mutableAppearance.Override = value.IsTruthy();
                 AtomManager.SetAtomAppearance(this, mutableAppearance);
@@ -248,6 +253,11 @@ public sealed class DreamObjectImage : DreamObject {
             }
             default:
                 if (AtomManager.IsValidAppearanceVar(varName)) {
+                    if (IsMutableAppearance) {
+                        AtomManager.SetAppearanceVar(MutableAppearance!, varName, value);
+                        break;
+                    }
+
                     using var mutableAppearance = IsMutableAppearance ? MutableAppearance! : AtomManager.MustGetAppearance(this).ToMutable();
                     AtomManager.SetAppearanceVar(mutableAppearance, varName, value);
                     AtomManager.SetAtomAppearance(this, mutableAppearance);
@@ -263,6 +273,30 @@ public sealed class DreamObjectImage : DreamObject {
         return _loc;
     }
 
+    public void SetMutableAppearance(MutableAppearance appearance) {
+        var oldAppearance = MutableAppearance;
+        var appearanceCopy = MutableAppearance.GetCopy(appearance);
+        var overlays = appearanceCopy.Overlays.ToArray();
+        var underlays = appearanceCopy.Underlays.ToArray();
+        appearanceCopy.Overlays.Clear();
+        appearanceCopy.Underlays.Clear();
+
+        if (!ReferenceEquals(oldAppearance, appearance))
+            oldAppearance?.Dispose();
+
+        MutableAppearance = appearanceCopy;
+
+        _overlays.Cut();
+        foreach (var overlay in overlays) {
+            _overlays.AddValue(new(overlay.ToMutable()));
+        }
+
+        _underlays.Cut();
+        foreach (var underlay in underlays) {
+            _underlays.AddValue(new(underlay.ToMutable()));
+        }
+    }
+
     protected override void HandleDeletion() {
         if (Entity != EntityUid.Invalid) {
             EntityManager.DeleteEntity(Entity);
@@ -273,5 +307,44 @@ public sealed class DreamObjectImage : DreamObject {
         _underlays.DecRef();
         _filters.DecRef();
         base.HandleDeletion();
+    }
+}
+
+public sealed class DreamMutableAppearanceList(DreamObjectDefinition listDef, DreamObjectImage owner, bool isUnderlays) : DreamList(listDef, 0) {
+    public override void AddValue(DreamValue value) {
+        base.AddValue(value);
+        RebuildAppearanceList();
+    }
+
+    public override void RemoveValue(DreamValue value) {
+        base.RemoveValue(value);
+        RebuildAppearanceList();
+    }
+
+    public override void SetValue(DreamValue key, DreamValue value, bool allowGrowth = false) {
+        base.SetValue(key, value, allowGrowth);
+        RebuildAppearanceList();
+    }
+
+    public override void Cut(int start = 1, int end = 0) {
+        base.Cut(start, end);
+        RebuildAppearanceList();
+    }
+
+    private void RebuildAppearanceList() {
+        if (AppearanceSystem == null || owner.MutableAppearance == null)
+            return;
+
+        var appearances = isUnderlays ? owner.MutableAppearance.Underlays : owner.MutableAppearance.Overlays;
+        appearances.Clear();
+
+        foreach (var value in EnumerateValues()) {
+            var overlay = DreamOverlaysList.CreateOverlayAppearance(AtomManager, value, owner.MutableAppearance.Icon);
+            if (overlay == null)
+                continue;
+
+            appearances.Add(AppearanceSystem.AddAppearance(overlay));
+            overlay.Dispose();
+        }
     }
 }

@@ -41,6 +41,10 @@ internal partial class DMCodeTree {
                 }
             }
 
+            if (variable.Name == "icon_state" && dmObject.IsSubtypeOf(DreamPath.Atom) && value is Expressions.String { Value.Length: 0 }) {
+                value = new Null(value.Location);
+            }
+
             if (value.TryAsConstant(compiler, out var constant)) {
                 variable.Value = constant;
 

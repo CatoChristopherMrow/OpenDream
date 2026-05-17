@@ -188,7 +188,7 @@ public sealed partial class AtomManager {
 
                 break;
             case "icon_state":
-                value.TryGetValueAsString(out appearance.IconState);
+                appearance.IconState = value.TryGetValueAsString(out var iconState) && iconState.Length > 0 ? iconState : null;
                 break;
             case "dir":
                 value.TryGetValueAsInteger(out var dir);
@@ -538,7 +538,7 @@ public sealed partial class AtomManager {
     public void SetAtomAppearance(DreamObject atom, MutableAppearance appearance) {
         if (atom is DreamObjectImage image) {
             if(image.IsMutableAppearance)
-                image.MutableAppearance = MutableAppearance.GetCopy(appearance); //this needs to be a copy
+                image.SetMutableAppearance(appearance);
             else
                 SetSpriteAppearance(new(image.Entity, image.SpriteComponent!), appearance);
             return;
