@@ -28,6 +28,7 @@ public sealed partial class DreamResourceManager {
     private readonly List<DreamResource> _resourceCache = new();
     private readonly Dictionary<string, int> _resourcePathToId = new();
     private readonly Dictionary<string, IconResource> _md5ToGeneratedIcon = new();
+    private readonly Dictionary<string, string[]> _listingCache = new();
     private readonly List<string> _queuedResourceLoads = new();
 
     private ISawmill _sawmill = default!;
@@ -42,6 +43,7 @@ public sealed partial class DreamResourceManager {
     public void Initialize(string rootPath, string[] resources, string? interfaceFile) {
         _resourceCache.Clear();
         _resourcePathToId.Clear();
+        _listingCache.Clear();
 
         // An empty resource path is the console
         _resourceCache.Add(new ConsoleOutputResource());
@@ -53,6 +55,9 @@ public sealed partial class DreamResourceManager {
         Directory.SetCurrentDirectory(RootPath);
 
         _sawmill.Debug($"Resource root path set to {RootPath}");
+
+        resources = resources.Select(resource => NormalizeResourcePath(resource)!).ToArray();
+        interfaceFile = NormalizeResourcePath(interfaceFile);
 
         // Immediately build list of resources from rsc.
         for (var i = 0; i < resources.Length; i++) {
@@ -76,23 +81,27 @@ public sealed partial class DreamResourceManager {
     }
 
     public bool DoesFileExist(string resourcePath) {
-        return File.Exists(resourcePath);
+        resourcePath = NormalizeResourcePath(resourcePath)!;
+        return File.Exists(GetFilePath(resourcePath));
     }
 
     public DreamResource LoadResource(string resourcePath) {
+        resourcePath = NormalizeResourcePath(resourcePath)!;
         DreamResource resource;
         int resourceId;
 
         DreamResource GetResource() {
+            var filePath = GetFilePath(resourcePath);
+
             // Create a new type of resource based on its extension
             switch (Path.GetExtension(resourcePath)) {
                 case ".dmf":
-                    resource = new DMFResource(resourceId, resourcePath, resourcePath, _serializationManager);
+                    resource = new DMFResource(resourceId, filePath, resourcePath, _serializationManager);
                     break;
                 case ".dmi":
                 case ".png":
                 case ".bmp":
-                    resource = new IconResource(resourceId, resourcePath, resourcePath);
+                    resource = new IconResource(resourceId, filePath, resourcePath);
                     break;
                 case ".jpg":
                 case ".rsi": // RT-specific, not in BYOND
@@ -101,7 +110,7 @@ public sealed partial class DreamResourceManager {
                     goto default;
 
                 default:
-                    resource = new DreamResource(resourceId, resourcePath, resourcePath);
+                    resource = new DreamResource(resourceId, filePath, resourcePath);
                     break;
             }
 
@@ -122,7 +131,7 @@ public sealed partial class DreamResourceManager {
     }
 
     public void QueueResourceLoad(string resourcePath) {
-        _queuedResourceLoads.Add(resourcePath);
+        _queuedResourceLoads.Add(NormalizeResourcePath(resourcePath)!);
     }
 
     public void ProcessQueuedResourceLoads() {
@@ -144,6 +153,7 @@ public sealed partial class DreamResourceManager {
     public bool TryLoadResource(string resourcePathOrRef, [NotNullWhen(true)] out DreamResource? resource) {
         resource = null;
         //TODO lookup by \ref[] string
+        resourcePathOrRef = NormalizeResourcePath(resourcePathOrRef)!;
         return _resourcePathToId.TryGetValue(resourcePathOrRef, out var resourceId) && TryLoadResource(resourceId, out resource);
     }
 
@@ -242,6 +252,7 @@ public sealed partial class DreamResourceManager {
     public bool DeleteFile(string filePath) {
         try {
             File.Delete(filePath);
+            _listingCache.Clear();
         } catch (Exception) {
             return false;
         }
@@ -252,6 +263,7 @@ public sealed partial class DreamResourceManager {
     public bool DeleteDirectory(string directoryPath) {
         try {
             Directory.Delete(directoryPath, true);
+            _listingCache.Clear();
         } catch (Exception) {
             return false;
         }
@@ -263,6 +275,7 @@ public sealed partial class DreamResourceManager {
         try {
             Directory.GetParent(filePath)?.Create();
             File.WriteAllText(filePath, text);
+            _listingCache.Clear();
         } catch (Exception) {
             return false;
         }
@@ -280,6 +293,8 @@ public sealed partial class DreamResourceManager {
                 File.WriteAllText(destinationFilePath, string.Empty);
             else
                 File.WriteAllBytes(destinationFilePath, sourceFile.ResourceData);
+
+            _listingCache.Clear();
         } catch (Exception) {
             return false;
         }
@@ -288,6 +303,10 @@ public sealed partial class DreamResourceManager {
     }
 
     public string[] EnumerateListing(string path) {
+        path = NormalizeResourcePath(path)!;
+        if (_listingCache.TryGetValue(path, out var cachedEntries))
+            return cachedEntries.ToArray();
+
         string directory = Path.GetDirectoryName(path) ?? ".";
         string searchPattern = Path.GetFileName(path);
 
@@ -298,6 +317,7 @@ public sealed partial class DreamResourceManager {
             entries[i] = relPath;
         }
 
+        _listingCache[path] = entries;
         return entries;
     }
 
@@ -305,5 +325,13 @@ public sealed partial class DreamResourceManager {
         using MD5 md5 = MD5.Create();
 
         return Encoding.ASCII.GetString(md5.ComputeHash(date));
+    }
+
+    private static string? NormalizeResourcePath(string? resourcePath) {
+        return resourcePath?.Replace('\\', '/');
+    }
+
+    private string GetFilePath(string resourcePath) {
+        return Path.IsPathRooted(resourcePath) ? resourcePath : Path.Join(RootPath, resourcePath);
     }
 }

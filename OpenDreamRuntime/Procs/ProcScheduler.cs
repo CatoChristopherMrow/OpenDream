@@ -23,6 +23,7 @@ namespace OpenDreamRuntime.Procs;
 
 public sealed partial class ProcScheduler {
     private readonly HashSet<AsyncNativeProc.AsyncNativeProcState> _sleeping = new();
+    private readonly HashSet<DreamThread> _delayedSpawnThreads = new();
     private readonly Queue<AsyncNativeProc.AsyncNativeProcState> _scheduled = new();
     private AsyncNativeProc.AsyncNativeProcState? _current;
 
@@ -62,6 +63,17 @@ public sealed partial class ProcScheduler {
         }
     }
 
+    public async void ScheduleSpawn(DreamThread thread, float delay) {
+        _delayedSpawnThreads.Add(thread);
+
+        try {
+            await CreateDelay(delay);
+            thread.Resume().Dispose();
+        } finally {
+            _delayedSpawnThreads.Remove(thread);
+        }
+    }
+
     public IEnumerable<DreamThread> InspectThreads() {
         // TODO: We shouldn't need to check if Thread is null here
         //       I think we're keeping disposed states somewhere here
@@ -80,6 +92,10 @@ public sealed partial class ProcScheduler {
             if (state.Thread == null)
                 continue;
             yield return state.Thread;
+        }
+
+        foreach (var thread in _delayedSpawnThreads) {
+            yield return thread;
         }
     }
 }

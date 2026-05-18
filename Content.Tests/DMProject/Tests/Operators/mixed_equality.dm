@@ -1,0 +1,5 @@
+/proc/RunTest()
+	ASSERT("pierce_immunity" != /datum)
+	ASSERT(!("pierce_immunity" == /datum))
+	ASSERT(/datum != "pierce_immunity")
+	ASSERT(!(/datum == "pierce_immunity"))

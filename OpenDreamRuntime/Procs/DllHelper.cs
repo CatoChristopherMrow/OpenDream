@@ -32,23 +32,29 @@ public static class DllHelper {
         if (LoadedDlls.TryGetValue(dllName, out var dll))
             return dll;
 
-        if (!TryResolveDll(resource, dllName, out dll))
-            throw new DllNotFoundException(
-                $"FFI: Unable to load {dllName}, unknown error. Did you remember to build a 64-bit DLL instead of 32-bit?"); //unknown because NativeLibrary doesn't give any error information.
-
+        dll = ResolveDll(resource, dllName);
         LoadedDlls.Add(dllName, dll);
         return dll;
     }
 
-    private static bool TryResolveDll(DreamResourceManager resource, string dllName, out nint dll) {
-        if (NativeLibrary.TryLoad(dllName, out dll))
-            return true;
+    private static nint ResolveDll(DreamResourceManager resource, string dllName) {
+        Exception? directLoadException = null;
+        try {
+            return NativeLibrary.Load(dllName);
+        } catch (Exception e) when (e is DllNotFoundException or BadImageFormatException) {
+            directLoadException = e;
+        }
 
         // Simple load didn't pass, try next to dmb.
         var root = resource.RootPath;
         var fullPath = Path.Combine(root, dllName);
         if (!File.Exists(fullPath))
-            throw new DllNotFoundException($"FFI: Unable to load {dllName}. File not found at {fullPath}");
-        return NativeLibrary.TryLoad(fullPath, out dll);
+            throw new DllNotFoundException($"FFI: Unable to load {dllName}. File not found at {fullPath}. Loader error: {directLoadException.Message}", directLoadException);
+
+        try {
+            return NativeLibrary.Load(fullPath);
+        } catch (Exception e) when (e is DllNotFoundException or BadImageFormatException) {
+            throw new DllNotFoundException($"FFI: Unable to load {dllName} at {fullPath}. Loader error: {e.Message}", e);
+        }
     }
 }

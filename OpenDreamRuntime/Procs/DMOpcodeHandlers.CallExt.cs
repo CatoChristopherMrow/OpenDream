@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -88,6 +89,12 @@ internal static partial class DMOpcodeHandlers {
         string dllName,
         string procName,
         [HandlesResourceDisposal] DreamProcArguments arguments) {
+        if (procName == "file_read" && TryReadStaticSourceFile(state, arguments, out var fileReadResult)) {
+            state.Push(fileReadResult);
+            arguments.Dispose();
+            return ProcStatus.Continue;
+        }
+
         var entryPoint = DllHelper.ResolveDllTarget(state.Proc.DreamResourceManager, dllName, procName);
 
         Span<nint> argV = stackalloc nint[arguments.Count];
@@ -118,6 +125,8 @@ internal static partial class DMOpcodeHandlers {
                 retString = LooksLikeDmiMetadata(retString) || !TryCreateDmiMetadataFallback(state, arguments.GetArgument(0), out var fallback)
                     ? retString
                     : fallback;
+            } else if (procName == "toml_file_to_json") {
+                retString = NormalizeTomlFileToJsonStringArrays(retString);
             }
 
             state.Push(new DreamValue(retString));
@@ -131,6 +140,22 @@ internal static partial class DMOpcodeHandlers {
         }
     }
 
+    private static bool TryReadStaticSourceFile(DMProcState state, DreamProcArguments arguments, out DreamValue result) {
+        result = DreamValue.Null;
+
+        if (arguments.Count != 1)
+            return false;
+
+        var path = arguments.GetArgument(0).Stringify();
+        if (!Path.GetExtension(path).Equals(".dm", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        result = state.Proc.DreamResourceManager.LoadResource(path).ReadAsString() is { } text
+            ? new DreamValue(text)
+            : DreamValue.Null;
+        return true;
+    }
+
     private static bool LooksLikeDmiMetadata(string metadata) {
         try {
             if (JsonNode.Parse(metadata) is JsonObject metadataObject && metadataObject["states"] is JsonArray)
@@ -142,11 +167,76 @@ internal static partial class DMOpcodeHandlers {
         return false;
     }
 
+    private static string NormalizeTomlFileToJsonStringArrays(string tomlResultJson) {
+        try {
+            if (JsonNode.Parse(tomlResultJson) is not JsonObject result ||
+                result["success"]?.GetValue<bool>() != true ||
+                result["content"]?.GetValue<string>() is not { } content ||
+                JsonNode.Parse(content) is not { } contentNode) {
+                return tomlResultJson;
+            }
+
+            ConvertStringArraysToAssociativeObjects(contentNode);
+            result["content"] = contentNode.ToJsonString();
+            return result.ToJsonString();
+        } catch (JsonException) {
+            return tomlResultJson;
+        } catch (InvalidOperationException) {
+            return tomlResultJson;
+        }
+    }
+
+    private static void ConvertStringArraysToAssociativeObjects(JsonNode node) {
+        switch (node) {
+            case JsonObject jsonObject:
+                foreach (var property in jsonObject.ToArray()) {
+                    if (property.Value == null)
+                        continue;
+
+                    var converted = ConvertStringArrayToAssociativeObject(property.Value);
+                    if (!ReferenceEquals(converted, property.Value))
+                        jsonObject[property.Key] = converted;
+                }
+
+                break;
+            case JsonArray jsonArray:
+                for (var i = 0; i < jsonArray.Count; i++) {
+                    if (jsonArray[i] == null)
+                        continue;
+
+                    var converted = ConvertStringArrayToAssociativeObject(jsonArray[i]!);
+                    if (!ReferenceEquals(converted, jsonArray[i]))
+                        jsonArray[i] = converted;
+                }
+
+                break;
+        }
+    }
+
+    private static JsonNode ConvertStringArrayToAssociativeObject(JsonNode node) {
+        if (node is JsonArray jsonArray) {
+            var allStrings = jsonArray.Count > 0 && jsonArray.All(element => element is JsonValue value && value.TryGetValue<string>(out _));
+            if (allStrings) {
+                JsonObject jsonObject = new();
+                foreach (var element in jsonArray) {
+                    var value = element!.GetValue<string>();
+                    jsonObject[value] = value;
+                }
+
+                return jsonObject;
+            }
+        }
+
+        ConvertStringArraysToAssociativeObjects(node);
+        return node;
+    }
+
     private static bool TryCreateDmiMetadataFallback(DMProcState state, DreamValue metadataArgument, out string metadata) {
         metadata = string.Empty;
 
         var resourcePath = metadataArgument.Stringify();
         switch (Path.GetExtension(resourcePath)) {
+            case ".dmi":
             case ".png":
             case ".bmp":
                 break;

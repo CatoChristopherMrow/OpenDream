@@ -27,6 +27,9 @@ public class DreamObjectMovable : DreamObjectAtom {
     private double? _boundY;
     private double? _boundWidth;
     private double? _boundHeight;
+    private bool _hasLocRef;
+
+    public bool HasLocRef => _hasLocRef;
 
     private string? ScreenLoc {
         get => _screenLoc;
@@ -259,22 +262,36 @@ public class DreamObjectMovable : DreamObjectAtom {
                 }
 
                 turf.Cell.Movables.Add(this);
-                if (oldLoc is null)
+                if (!_hasLocRef) {
                     IncRef();
+                    _hasLocRef = true;
+                }
                 break;
             case DreamObjectMovable movable:
                 TransformSystem.SetParent(Entity, movable.Entity);
                 TransformSystem.SetLocalPosition(Entity, Vector2.Zero);
-                if (oldLoc is null)
+                if (!_hasLocRef) {
                     IncRef();
+                    _hasLocRef = true;
+                }
                 break;
             case null:
                 TransformSystem.SetParent(Entity, EntityUid.Invalid);
-                if (oldLoc is not null)
-                    DecRef();
+                if (_hasLocRef) {
+                    ReleaseLocRef();
+                    _hasLocRef = false;
+                }
                 break;
             default:
                 throw new ArgumentException($"Invalid loc {loc}");
+        }
+    }
+
+    private void ReleaseLocRef() {
+        if (Deleting && !Deleted) {
+            RefCount--;
+        } else {
+            DecRef();
         }
     }
 

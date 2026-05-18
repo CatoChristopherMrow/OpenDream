@@ -95,7 +95,7 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
     /// <summary>
     /// Generate a DMI using all the inserted icon states
     /// </summary>
-    /// <remarks>The resulting DMI will consist of one long flat row of frames</remarks>
+    /// <remarks>The resulting DMI will be packed into a BYOND-style near-square atlas</remarks>
     /// <returns>The DreamResource containing the DMI and the ParsedDMIDescription used to construct it</returns>
     /// <exception cref="NotImplementedException">Using icon states of various sizes is unimplemented</exception>
     public IconResource GenerateDMI() {
@@ -116,13 +116,17 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
         ParsedDMIDescription newDescription = new() {Width = frameWidth, Height = frameHeight};
         newDescription.States.EnsureCapacity(States.Count);
 
-        int span = frameWidth * Math.Max(frameCount, 1);
-        Rgba32[] pixels = PixelArrayPool.Rent(span * frameHeight);
+        int frameColumns = Math.Max((int)Math.Ceiling(Math.Sqrt(frameCount)), 1);
+        int frameRows = Math.Max((int)Math.Ceiling(frameCount / (double)frameColumns), 1);
+        int span = frameWidth * frameColumns;
+        int imageHeight = frameHeight * frameRows;
+        Rgba32[] pixels = PixelArrayPool.Rent(span * imageHeight);
+        Array.Clear(pixels, 0, span * imageHeight);
 
         int currentFrame = 0;
         foreach (var iconStatePair in States) {
             var iconState = iconStatePair.Value;
-            ParsedDMIState newState = new(iconStatePair.Key) { Loop = false, Rewind = false };
+            ParsedDMIState newState = new(iconStatePair.Key) { Rewind = false };
 
             newDescription.States.Add(newState.Name, newState);
 
@@ -135,12 +139,17 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
                 if (!iconState.Directions.TryGetValue(direction, out var frames))
                     continue; // Blank frames
 
-                var newFrames = DrawFrames(pixels, firstFrame, frames, direction);
+                var newFrames = DrawFrames(pixels, firstFrame, frames, direction, span, frameColumns);
                 newState.Directions.Add(direction, newFrames);
             }
         }
 
-        Image<Rgba32> dmiImage = Image.LoadPixelData<Rgba32>(pixels, span, frameHeight);
+        for (var i = 0; i < span * imageHeight; i++) {
+            if (pixels[i].A == 0)
+                pixels[i] = new Rgba32(192, 192, 192, 0);
+        }
+
+        Image<Rgba32> dmiImage = Image.LoadPixelData<Rgba32>(pixels, span, imageHeight);
 
         PixelArrayPool.Return(pixels, clearArray: true);
 
@@ -398,7 +407,7 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
     }
 
     public void InsertStates(IconResource icon, DreamValue state, DreamValue dir, DreamValue frame,
-        bool isConstructor = false) {
+        bool isConstructor = false, bool useDefaultStateAsSource = false) {
         bool copyingAllDirs = !dir.TryGetValueAsInteger(out var dirVal);
         bool copyingAllStates = !state.TryGetValueAsString(out var copyingState);
         bool copyingAllFrames = !frame.TryGetValueAsInteger(out var copyingFrame);
@@ -420,7 +429,16 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
                     forceSouth: false);
             }
         } else {
-            InsertState(icon, isConstructor ? string.Empty : copyingState!, copyingState!,
+            var sourceState = copyingState!;
+            if (useDefaultStateAsSource && !icon.DMI.States.ContainsKey(copyingState!)) {
+                if (icon.DMI.States.ContainsKey(string.Empty)) {
+                    sourceState = string.Empty;
+                } else if (icon.DMI.States.Count == 1) {
+                    sourceState = icon.DMI.States.Keys.Single();
+                }
+            }
+
+            InsertState(icon, isConstructor ? string.Empty : copyingState!, sourceState,
                 copyingAllDirs ? null : copyingDirection, copyingAllFrames ? null : copyingFrame,
                 forceSouth: isConstructor);
         }
@@ -460,15 +478,16 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
         _cachedDMI = null;
     }
 
-    private ParsedDMIFrame[] DrawFrames(Rgba32[] pixels, int firstFrameIndex, List<IconFrame> frames, AtomDirection dir) {
+    private ParsedDMIFrame[] DrawFrames(Rgba32[] pixels, int firstFrameIndex, List<IconFrame> frames, AtomDirection dir, int imageSpan, int frameColumns) {
         ParsedDMIFrame[] newFrames = new ParsedDMIFrame[frames.Count];
-        int x = firstFrameIndex * Width;
-        int imageSpan = FrameCount * Width;
 
         for (var frameIndex = 0; frameIndex < frames.Count; frameIndex++) {
             var frame = frames[frameIndex];
+            int atlasFrame = firstFrameIndex + frameIndex;
+            int x = atlasFrame % frameColumns * Width;
+            int y = atlasFrame / frameColumns * Height;
 
-            newFrames[frameIndex] = new ParsedDMIFrame {X = x, Y = 0, Delay = frame.DMIFrame.Delay};
+            newFrames[frameIndex] = new ParsedDMIFrame {X = x, Y = y, Delay = frame.DMIFrame.Delay};
             if (frameIndex > frames.Count)
                 continue; // Empty frame
 
@@ -494,7 +513,7 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
                         var rowSpan = accessor.GetRowSpan(srcFrameY + y);
 
                         for (int frameX = 0; frameX < Width; frameX++) {
-                            int pixelLocation = (y * imageSpan) + x + frameX;
+                            int pixelLocation = ((newFrames[frameIndex].Y + y) * imageSpan) + x + frameX;
 
                             pixels[pixelLocation] = rowSpan[srcFrameX + frameX];
                         }
@@ -506,11 +525,9 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
                 if (operation.AppliedFrames <= firstFrameIndex + frameIndex)
                     break; // operation.AppliedFrames should be in ascending order; we can quit now
 
-                var bounds = UIBox2i.FromDimensions(x, 0, Width, Height);
+                var bounds = UIBox2i.FromDimensions(x, y, Width, Height);
                 operation.Operation.ApplyToFrame(pixels, imageSpan, frameIndex, dir, bounds);
             }
-
-            x += Width;
         }
 
         return newFrames;

@@ -390,6 +390,7 @@ public sealed class DMProcState : ProcState {
     private int _pc;
     private readonly Stack<int> _catchPosition = new();
     private readonly Stack<int> _catchVarIndex = new();
+    private readonly Stack<(int Start, int Count)> _activeArgumentStackRanges = new();
     private ProcArgsList? _argsList;
     private static readonly int SlowProcLogMs = int.TryParse(Environment.GetEnvironmentVariable("OPENDREAM_SLOW_PROC_MS"), out var slowProcMs) ? slowProcMs : 0;
     private static long _nextSlowProcLogTick;
@@ -431,6 +432,14 @@ public sealed class DMProcState : ProcState {
         Result.IncRef();
 
         _stack = DreamValuePool.Rent(other._stack.Length);
+        _stackOwned = new bool[other._stack.Length];
+        _stackIndex = other._stackIndex;
+        Array.Copy(other._stack, _stack, _stackIndex);
+        Array.Copy(other._stackOwned, _stackOwned, _stackIndex);
+        for (int i = 0; i < _stackIndex; i++) {
+            if (_stackOwned[i])
+                _stack[i].IncRef();
+        }
 
         Array.Copy(other._localVariables, _localVariables, ArgumentCount + _proc.LocalCount);
         for (int i = 0; i < ArgumentCount + _proc.LocalCount; i++)
@@ -446,6 +455,7 @@ public sealed class DMProcState : ProcState {
         Usr?.IncRef();
         ArgumentCount = Math.Max(arguments.Count, _proc.ArgumentNames?.Count ?? 0);
         _stack = DreamValuePool.Rent(maxStackSize);
+        _stackOwned = new bool[_stack.Length];
         _firstResume = true;
 
         for (int i = 0; i < ArgumentCount; i++) {
@@ -651,9 +661,11 @@ public sealed class DMProcState : ProcState {
         DreamValuePool.Return(_stack);
         _stackIndex = 0;
         _stack = null!;
+        _stackOwned = null!;
 
         _catchPosition.Clear();
         _catchVarIndex.Clear();
+        _activeArgumentStackRanges.Clear();
 
         Pool.Push(this);
     }
@@ -682,12 +694,102 @@ public sealed class DMProcState : ProcState {
     #region Stack
 
     private DreamValue[] _stack = default!;
+    private bool[] _stackOwned = default!;
     private int _stackIndex;
     public ReadOnlyMemory<DreamValue> DebugStack() => _stack.AsMemory(0, _stackIndex);
 
+    public int CountStackReferences(DreamObject dreamObject) {
+        var count = 0;
+        for (var i = 0; i < _stackIndex; i++) {
+            if (_stackOwned[i] && _stack[i].TryGetValueAsDreamObject(out var stackObject) && ReferenceEquals(stackObject, dreamObject))
+                count++;
+        }
+
+        foreach (var enumerator in Enumerators) {
+            if (enumerator is not null)
+                count += enumerator.CountReferences(dreamObject);
+        }
+
+        return count;
+    }
+
+    public (int Arguments, int Locals, int ActiveStack, int InactiveStack, int Instance, int Usr, int Result) CountFrameReferences(DreamObject dreamObject) {
+        var arguments = 0;
+        for (var i = 0; i < ArgumentCount; i++) {
+            if (_localVariables[i].TryGetValueAsDreamObject(out var argumentObject) && ReferenceEquals(argumentObject, dreamObject))
+                arguments++;
+        }
+
+        var locals = 0;
+        var localEnd = ArgumentCount + _proc.LocalCount;
+        for (var i = ArgumentCount; i < localEnd; i++) {
+            if (_localVariables[i].TryGetValueAsDreamObject(out var localObject) && ReferenceEquals(localObject, dreamObject))
+                locals++;
+        }
+
+        var activeStack = 0;
+        for (var i = 0; i < _stackIndex; i++) {
+            if (_stackOwned[i] && _stack[i].TryGetValueAsDreamObject(out var stackObject) && ReferenceEquals(stackObject, dreamObject))
+                activeStack++;
+        }
+
+        foreach (var enumerator in Enumerators) {
+            if (enumerator is not null)
+                activeStack += enumerator.CountReferences(dreamObject);
+        }
+
+        var inactiveStack = 0;
+        if (_stack != null) {
+            for (var i = _stackIndex; i < _stack.Length; i++) {
+                if (!IsActiveArgumentStackIndex(i) && _stackOwned[i] && _stack[i].TryGetValueAsDreamObject(out var stackObject) && ReferenceEquals(stackObject, dreamObject))
+                    inactiveStack++;
+            }
+        }
+
+        var instance = Instance != null && ReferenceEquals(Instance, dreamObject) ? 1 : 0;
+        var usr = Usr != null && ReferenceEquals(Usr, dreamObject) ? 1 : 0;
+        var result = ResultReferences(dreamObject) ? 1 : 0;
+
+        return (arguments, locals, activeStack, inactiveStack, instance, usr, result);
+    }
+
+    public int CountActiveArgumentStackReferences(DreamObject dreamObject) {
+        var count = 0;
+        foreach (var (start, rangeCount) in _activeArgumentStackRanges) {
+            for (var i = start; i < start + rangeCount; i++) {
+                if (_stackOwned[i] && _stack[i].TryGetValueAsDreamObject(out var stackObject) && ReferenceEquals(stackObject, dreamObject))
+                    count++;
+            }
+        }
+
+        return count;
+    }
+
+    private void PushActiveArgumentStackRange(int start, int count) {
+        _activeArgumentStackRanges.Push((start, count));
+    }
+
+    private bool IsActiveArgumentStackIndex(int index) {
+        foreach (var (start, count) in _activeArgumentStackRanges) {
+            if (index >= start && index < start + count)
+                return true;
+        }
+
+        return false;
+    }
+
+    private void PopActiveArgumentStackRange(int start, int count) {
+        var range = _activeArgumentStackRanges.Pop();
+        Debug.Assert(range.Start == start && range.Count == count);
+    }
+
     public void Push(DreamValue value) {
+        if (_stackOwned[_stackIndex])
+            _stack[_stackIndex].DecRef();
+
         _stack[_stackIndex] = value;
         value.IncRef();
+        _stackOwned[_stackIndex] = true;
 
         // ++ sucks for the compiler
         _stackIndex += 1;
@@ -697,19 +799,28 @@ public sealed class DMProcState : ProcState {
     public DreamValue Pop() {
         // -- sucks for the compiler
         _stackIndex -= 1;
-        return _stack[_stackIndex];
+        DreamValue value = _stack[_stackIndex];
+        _stack[_stackIndex] = DreamValue.Null;
+        _stackOwned[_stackIndex] = false;
+        return value;
     }
 
     public float UnsafePopAsFloat() {
         _stackIndex -= 1;
-        _stack[_stackIndex].DecRef();
-        return _stack[_stackIndex].UnsafeGetValueAsFloat();
+        var value = _stack[_stackIndex];
+        _stack[_stackIndex] = DreamValue.Null;
+        _stackOwned[_stackIndex] = false;
+        value.DecRef();
+        return value.UnsafeGetValueAsFloat();
     }
 
     public void PopDrop() {
         DebugTools.Assert(_stackIndex > 0, "Attempted to PopDrop with a stack index of (or below?) 0");
         _stackIndex -= 1;
-        _stack[_stackIndex].DecRef();
+        if (_stackOwned[_stackIndex])
+            _stack[_stackIndex].DecRef();
+        _stack[_stackIndex] = DreamValue.Null;
+        _stackOwned[_stackIndex] = false;
     }
 
     /// <summary>
@@ -721,6 +832,13 @@ public sealed class DMProcState : ProcState {
         _stackIndex -= count;
 
         return _stack.AsSpan(_stackIndex, count);
+    }
+
+    public void ReleasePoppedStackValues(int count) {
+        for (var i = _stackIndex; i < _stackIndex + count; i++) {
+            _stackOwned[i] = false;
+            _stack[i] = DreamValue.Null;
+        }
     }
 
     public DreamValue Peek() {
@@ -836,8 +954,13 @@ public sealed class DMProcState : ProcState {
 
         index = _stack[_stackIndex - 1];
         indexing = _stack[_stackIndex - 2];
-        if (!peek)
+        if (!peek) {
             _stackIndex -= 2;
+            _stackOwned[_stackIndex] = false;
+            _stackOwned[_stackIndex + 1] = false;
+            _stack[_stackIndex] = DreamValue.Null;
+            _stack[_stackIndex + 1] = DreamValue.Null;
+        }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1226,11 +1349,14 @@ public sealed class DMProcState : ProcState {
         private readonly DMProcState _state;
         private readonly DMStackArgumentInfo _info;
         private readonly ReadOnlySpan<DreamValue> _values;
+        private readonly int _stackStart;
 
         public DMStackArguments(DMProcState state, DMStackArgumentInfo info) {
             _state = state;
             _info = info;
+            _stackStart = state._stackIndex - info.StackSize;
             _values = state.PopCount(info.StackSize);
+            state.PushActiveArgumentStackRange(_stackStart, _values.Length);
 
             switch (info.Type) {
                 case DMCallArgumentsType.FromStackKeyed:
@@ -1243,8 +1369,16 @@ public sealed class DMProcState : ProcState {
         }
 
         public void Dispose() {
-            foreach (var value in _values)
-                value.DecRef();
+            _state.PopActiveArgumentStackRange(_stackStart, _values.Length);
+
+            for (var i = 0; i < _values.Length; i++) {
+                var stackIndex = _stackStart + i;
+                if (!_state._stackOwned[stackIndex])
+                    continue;
+
+                _values[i].DecRef();
+                _state._stackOwned[stackIndex] = false;
+            }
         }
 
         public (DreamValue Key, DreamValue Value)[] ToArray() {

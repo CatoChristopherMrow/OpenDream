@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using DMCompiler.Bytecode;
 using DMCompiler.DM.Expressions;
 using DMCompiler.Json;
@@ -138,6 +139,21 @@ internal sealed class DMObject(DMCompiler compiler, int id, DreamPath path, DMOb
     public bool IsRuntimeInitialized(string varName) {
         return InitializationProcAssignments.Any(v => v.Name == varName)
                || (Parent?.IsRuntimeInitialized(varName) ?? false);
+    }
+
+    public bool TryGetRuntimeInitializer(string varName, [NotNullWhen(true)] out DMExpression? initializer) {
+        foreach (var (name, assignment) in InitializationProcAssignments) {
+            if (name == varName) {
+                initializer = assignment.Right;
+                return true;
+            }
+        }
+
+        if (Parent is not null)
+            return Parent.TryGetRuntimeInitializer(varName, out initializer);
+
+        initializer = null;
+        return false;
     }
 
     /// <summary>

@@ -181,7 +181,7 @@ internal static partial class DreamProcNativeHelpers {
 
                 var appearance = atomManager.MustGetAppearance(cell.Turf);
                 var tile = new ViewAlgorithm.Tile() {
-                    Opaque = appearance.Opacity,
+                    Opaque = appearance?.Opacity ?? false,
                     Luminosity = 0,
                     DeltaX = deltaX,
                     DeltaY = deltaY
@@ -190,7 +190,7 @@ internal static partial class DreamProcNativeHelpers {
                 foreach (var movable in cell.Movables) {
                     appearance = atomManager.MustGetAppearance(movable);
 
-                    tile.Opaque |= appearance.Opacity;
+                    tile.Opaque |= appearance?.Opacity ?? false;
                 }
 
                 tiles[viewX, viewY] = tile;

@@ -52,6 +52,9 @@ public sealed class DreamObjectTurf : DreamObjectAtom {
         if (Cell == null!)
             return;
 
+        if (Appearance == null! || oldArea.Appearance == null!)
+            return;
+
         using var newAppearance = Appearance.ToMutable();
 
         newAppearance.Overlays.Remove(oldArea.Appearance);

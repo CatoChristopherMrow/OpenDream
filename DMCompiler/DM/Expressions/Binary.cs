@@ -695,6 +695,8 @@ internal abstract class AssignmentBinaryOp(Location location, DMExpression lhs, 
 
 // x = y
 internal sealed class Assignment(Location location, DMExpression lhs, DMExpression rhs) : AssignmentBinaryOp(location, lhs, rhs) {
+    public DMExpression Right => RHS;
+
     public override DreamPath? Path => LHS.Path;
 
     protected override void EmitOp(ExpressionContext ctx, DMReference reference, string endLabel) {

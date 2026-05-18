@@ -156,7 +156,10 @@ public sealed class ScreenLocation {
         if (mapControlSplitIndex > 0) {
             string mapControl = rangeSplit[0].Substring(0, mapControlSplitIndex);
 
-            if (char.IsAsciiLetter(mapControl[0]) && mapControl.IndexOfAny(['+', '-']) == -1 && !_keywords.Contains(mapControl)) {
+            if (char.IsAsciiLetter(mapControl[0]) &&
+                mapControl.IndexOf('+') == -1 &&
+                (mapControl.IndexOf('-') == -1 || mapControl.IndexOfAny(['[', ']', '_', '.']) != -1) &&
+                !_keywords.Contains(mapControl)) {
                 MapControl = mapControl;
                 coordinateSplit[0] = coordinateSplit[0].Substring(mapControlSplitIndex + 1);
             }
@@ -166,7 +169,13 @@ public sealed class ScreenLocation {
             X = 0;
             Y = 0;
 
-            (HorizontalAnchor, VerticalAnchor) = coordinateSplit[0].Trim() switch {
+            string coordinate = coordinateSplit[0].Trim();
+            if (!_keywords.Contains(coordinate)) {
+                ParseScreenLocCoordinate(coordinate, true);
+                return;
+            }
+
+            (HorizontalAnchor, VerticalAnchor) = coordinate switch {
                 var keyword when TryNormalizeScreenKeyword(keyword, out var normalizedKeyword) => normalizedKeyword switch {
                     "CENTER" or "MIDDLE" => (HorizontalAnchor.Center, VerticalAnchor.Center),
                     "WEST" => (HorizontalAnchor.West, VerticalAnchor.Center),
@@ -227,6 +236,11 @@ public sealed class ScreenLocation {
                 case ' ' or '\t':
                     continue;
                 case '-' or '+' when (currentPiece.Length == 0 || currentPiece[^1] != ':'):
+                    if (currentPiece is ['+' or '-']) {
+                        currentPiece.Clear();
+                        break;
+                    }
+
                     // Start a new piece
                     pieces.Add(currentPiece.ToString());
                     currentPiece.Clear();
@@ -310,8 +324,16 @@ public sealed class ScreenLocation {
 
                 // A normal number
                 default:
-                    if (!float.TryParse(offsetStr, out var offset))
+                    bool isPercent = offsetStr.EndsWith('%');
+                    string numberStr = isPercent ? offsetStr[..^1] : offsetStr;
+
+                    if (!float.TryParse(numberStr, out var offset)) {
                         Sawmill.Error($"Invalid offset {offsetStr} in {coordinate}");
+                        break;
+                    }
+
+                    if (isPercent)
+                        offset /= 100f;
 
                     coordinateResult += offset;
                     if (isFirstNumber) // Deal with us being 0-indexed while screen_loc is 1-indexed

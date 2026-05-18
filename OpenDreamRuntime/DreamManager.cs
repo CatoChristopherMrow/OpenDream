@@ -73,6 +73,7 @@ public sealed partial class DreamManager {
 
         if (!LoadJson(jsonPath)) {
             _taskManager.RunOnMainThread(() => { IoCManager.Resolve<IBaseServer>().Shutdown("Error while loading the compiled json. The opendream.json_path CVar may be empty, or points to a file that doesn't exist"); });
+            return;
         }
     }
 
@@ -106,7 +107,7 @@ public sealed partial class DreamManager {
     }
 
     public void Update() {
-        if (!Initialized)
+        if (!Initialized || WorldInstance.Deleted)
             return;
 
         using (Profiler.BeginZone("Tick", color: (uint)Color.OrangeRed.ToArgb())) {
@@ -114,6 +115,9 @@ public sealed partial class DreamManager {
 
             using (Profiler.BeginZone("DM Execution", color: (uint)Color.LightPink.ToArgb()))
                 _procScheduler.Process();
+
+            if (!Initialized || WorldInstance.Deleted)
+                return;
 
             using (Profiler.BeginZone("Map Update", color: (uint)Color.LightPink.ToArgb())) {
                 UpdateStat();
@@ -244,6 +248,10 @@ public sealed partial class DreamManager {
 
         LastDMException = e;
         OnException?.Invoke(this, e);
+
+        if (WorldInstance.Deleted) {
+            return;
+        }
 
         // Invoke world.Error()
         var obj = _objectTree.CreateObject<DreamObjectException>(_objectTree.Exception);

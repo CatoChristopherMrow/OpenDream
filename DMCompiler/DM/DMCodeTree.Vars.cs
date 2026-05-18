@@ -99,6 +99,7 @@ internal partial class DMCodeTree {
                 DimensionalList => true,
                 NewList => true,
                 NewPath => true,
+                Initial => true,
                 Rgb => true,
                 // TODO: Check for circular reference loops here
                 // (Note that we do accidentally support global-field access somewhat when it gets const-folded by TryAsConstant before we get here)

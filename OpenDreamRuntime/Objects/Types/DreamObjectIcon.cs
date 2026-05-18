@@ -25,8 +25,12 @@ public sealed class DreamObjectIcon : DreamObject {
 
         if (!icon.IsNull) {
             if (icon.TryGetValueAsDreamObject<DreamObjectIcon>(out var iconObj)) {
-                // Copy the DreamIcon rather than create the entire DMI from it
-                Icon.CopyFrom(iconObj.Icon);
+                if (state.IsNull && dir.IsNull && frame.IsNull && moving.IsNull) {
+                    // Copy the DreamIcon rather than create the entire DMI from it
+                    Icon.CopyFrom(iconObj.Icon);
+                } else {
+                    Icon.InsertStates(iconObj.Icon.GenerateDMI(), state, dir, frame, isConstructor: true);
+                }
             } else {
                 if (!DreamResourceManager.TryLoadIcon(icon, out var iconRsc))
                     throw new Exception($"Cannot create an icon from {icon}");

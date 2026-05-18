@@ -54,10 +54,12 @@ namespace OpenDreamRuntime.Procs {
             int size = state.ReadInt();
             var list = state.Proc.ObjectTree.CreateList(size);
 
-            foreach (DreamValue value in state.PopCount(size)) {
+            var popped = state.PopCount(size);
+            foreach (DreamValue value in popped) {
                 list.AddValue(value);
                 value.Dispose();
             }
+            state.ReleasePoppedStackValues(size);
 
             state.Push(new DreamValue(list));
             list.DecRef();
@@ -74,6 +76,7 @@ namespace OpenDreamRuntime.Procs {
                 list.Initialize(listInitArgs);
             foreach (var value in dimensionSizes)
                 value.Dispose();
+            state.ReleasePoppedStackValues(dimensionCount);
 
             state.Push(new DreamValue(list));
             list.DecRef();
@@ -95,6 +98,7 @@ namespace OpenDreamRuntime.Procs {
                     list.SetValue(key, value, allowGrowth: true);
                 }
             }
+            state.ReleasePoppedStackValues(size * 2);
 
             state.Push(new DreamValue(list));
             list.DecRef();
@@ -112,6 +116,7 @@ namespace OpenDreamRuntime.Procs {
 
                 list.SetValue(key, value, allowGrowth: true);
             }
+            state.ReleasePoppedStackValues(size * 2);
 
             state.Push(new DreamValue(list));
             list.DecRef();
@@ -686,6 +691,7 @@ namespace OpenDreamRuntime.Procs {
 
             foreach (var interp in interps)
                 interp.Dispose();
+            state.ReleasePoppedStackValues(interpCount);
 
             state.Push(new DreamValue(formattedString.ToString()));
             return ProcStatus.Continue;
@@ -2021,12 +2027,7 @@ namespace OpenDreamRuntime.Procs {
                 // TODO: Does the rest of the proc get scheduled?
                 // Does the value of the delay mean anything?
             } else {
-                async void Wait() {
-                    await state.ProcScheduler.CreateDelay(delay);
-                    newContext.Resume().Dispose();
-                }
-
-                Wait();
+                state.ProcScheduler.ScheduleSpawn(newContext, delay);
             }
 
             state.Jump(jumpTo);
@@ -2528,10 +2529,14 @@ namespace OpenDreamRuntime.Procs {
             } else {
                 int pickedIndex = state.DreamManager.Random.Next(0, count);
                 var possibleValues = state.PopCount(count);
+                var pickedValue = possibleValues[pickedIndex];
+                pickedValue.IncRef();
 
-                state.Push(possibleValues[pickedIndex]);
                 foreach (var value in possibleValues)
                     value.Dispose();
+                state.ReleasePoppedStackValues(count);
+                state.Push(pickedValue);
+                pickedValue.DecRef();
             }
 
             return ProcStatus.Continue;
@@ -2919,13 +2924,15 @@ namespace OpenDreamRuntime.Procs {
             int estimatedStringSize = count * 10; // FIXME: We can do better with string size prediction here.
             var builder = new StringBuilder(estimatedStringSize);
 
-            foreach (DreamValue add in state.PopCount(count)) {
+            var popped = state.PopCount(count);
+            foreach (DreamValue add in popped) {
                 if (add.TryGetValueAsString(out var addStr)) {
                     builder.Append(addStr);
                 }
 
                 add.Dispose();
             }
+            state.ReleasePoppedStackValues(count);
 
             state.Push(new DreamValue(builder.ToString()));
             return ProcStatus.Continue;
@@ -2974,6 +2981,19 @@ namespace OpenDreamRuntime.Procs {
             // null should only ever be equal to null
             if (first.IsNull) return second.IsNull;
             if (second.IsNull) return false; // If this were ever true the above condition would have handled it
+
+            if (first.Type != second.Type) {
+                if (first.Type == DreamValue.DreamValueType.DreamType &&
+                    second.Type == DreamValue.DreamValueType.ModifiedDreamType)
+                    return first.MustGetValueAsType().Equals(second.MustGetValueAsType());
+
+                if (first.Type == DreamValue.DreamValueType.ModifiedDreamType &&
+                    second.Type == DreamValue.DreamValueType.DreamType)
+                    return first.TryGetValueAsModifiedType(out var firstModified) &&
+                        firstModified.Type.Equals(second.MustGetValueAsType());
+
+                return false;
+            }
 
             // Now we don't have to worry about null for the rest of this method
             switch (first.Type) {

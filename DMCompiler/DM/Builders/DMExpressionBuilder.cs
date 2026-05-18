@@ -645,6 +645,12 @@ internal class DMExpressionBuilder(ExpressionContext ctx, DMExpressionBuilder.Sc
             if (localVar is not null) {
                 return new Local(identifier.Location, localVar);
             }
+
+            var procGlobalId = ctx.ProcOrNull?.GetGlobalVariableId(name);
+            if (procGlobalId != null) {
+                var procGlobalVar = ObjectTree.Globals[procGlobalId.Value];
+                return new GlobalField(identifier.Location, procGlobalVar.Type, procGlobalId.Value, procGlobalVar.ValType);
+            }
         }
 
         var field = ctx.Type.GetVariable(name);

@@ -79,7 +79,22 @@ public sealed class DreamObjectArea : DreamObjectAtom {
             case "z":
                 throw new Exception($"Cannot set coordinate var '{varName}' on an area");
             case "contents":
-                // TODO
+                if (!value.TryGetValueAsIDreamList(out var newContents))
+                    throw new Exception($"Cannot set area contents to {value}");
+
+                var oldTurfs = new DreamObjectTurf[Turfs.Count];
+                Turfs.CopyTo(oldTurfs);
+
+                foreach (var turf in oldTurfs) {
+                    turf.Cell.Area = DreamMapManager.DefaultArea;
+                }
+
+                foreach (var entry in newContents.EnumerateValues()) {
+                    if (!entry.TryGetValueAsDreamObject<DreamObjectTurf>(out var turf))
+                        throw new Exception($"Cannot add {entry} to area contents");
+
+                    turf.Cell.Area = this;
+                }
                 break;
             default:
                 base.SetVar(varName, value);

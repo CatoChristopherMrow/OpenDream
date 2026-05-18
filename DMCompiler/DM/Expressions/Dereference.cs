@@ -334,7 +334,22 @@ internal sealed class ScopeReference(DMObjectTree objectTree, Location location,
 
     public override string GetNameof(ExpressionContext ctx) => dmVar.Name;
 
+    public override void EmitPushValue(ExpressionContext ctx) {
+        if (expression is IConstantPath && expression.Path is { } path && objectTree.TryGetDMObject(path, out var owner) &&
+            owner.TryGetRuntimeInitializer(identifier, out var initializer)) {
+            initializer.EmitPushValue(ctx);
+            return;
+        }
+
+        base.EmitPushValue(ctx);
+    }
+
     public override bool TryAsConstant(DMCompiler compiler, [NotNullWhen(true)] out Constant? constant) {
+        if (expression is IConstantPath && expression.Path is { } path && objectTree.TryGetDMObject(path, out var owner) && owner.IsRuntimeInitialized(identifier)) {
+            constant = null;
+            return false;
+        }
+
         if (expression is Field && dmVar.TryAsConstant(compiler, out constant)) {
             return true;
         }

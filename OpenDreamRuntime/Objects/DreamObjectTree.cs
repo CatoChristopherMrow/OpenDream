@@ -319,7 +319,9 @@ public sealed partial class DreamObjectTree {
 
         //First pass: Create types and set them up for initialization
         Types[0] = Root;
-        var pathToType = new Dictionary<string, TreeEntry>(types.Length);
+        var pathToType = new Dictionary<string, TreeEntry>(types.Length) {
+            [Root.Path] = Root
+        };
         for (int i = 1; i < Types.Length; i++) {
             var path = types[i].Path;
             var type = new TreeEntry(path, i);

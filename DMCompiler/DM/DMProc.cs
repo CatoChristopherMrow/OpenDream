@@ -836,6 +836,12 @@ internal sealed class DMProc {
 
     public void EndScope() {
         DMProcScope destroyedScope = _scopes.Pop();
+
+        foreach (LocalVariable localVariable in destroyedScope.LocalVariables.Values.OrderByDescending(local => local.Id)) {
+            WriteOpcode(DreamProcOpcode.NullRef);
+            WriteReference(DMReference.CreateLocal(localVariable.Id), affectStack: false);
+        }
+
         DeallocLocalVariables(destroyedScope.LocalVariables.Count);
     }
 

@@ -59,6 +59,33 @@ public sealed class ScreenLocationTests {
     }
 
     [Test]
+    public void ParsesSignedAndPercentOffsets() {
+        ScreenLocation percent = new("LEFT+50%,CENTER");
+        ScreenLocation negative = new("CENTER+-1:16,CENTER");
+
+        Assert.Multiple(() => {
+            Assert.That(percent.HorizontalAnchor, Is.EqualTo(HorizontalAnchor.Left));
+            Assert.That(percent.X, Is.EqualTo(0));
+            Assert.That(percent.PixelOffsetX, Is.EqualTo(16));
+
+            Assert.That(negative.HorizontalAnchor, Is.EqualTo(HorizontalAnchor.Center));
+            Assert.That(negative.X, Is.EqualTo(-1));
+            Assert.That(negative.PixelOffsetX, Is.EqualTo(16));
+        });
+    }
+
+    [Test]
+    public void ParsesMapControlNamesWithGeneratedRefs() {
+        ScreenLocation camera = new("CAMERA-[0X205A2A7]_MAP:1:0");
+
+        Assert.Multiple(() => {
+            Assert.That(camera.MapControl, Is.EqualTo("CAMERA-[0X205A2A7]_MAP"));
+            Assert.That(camera.X, Is.EqualTo(0));
+            Assert.That(camera.PixelOffsetX, Is.EqualTo(0));
+        });
+    }
+
+    [Test]
     public void ScreenKeywordsUseExpandedScreenBounds() {
         var view = new ViewRange(11, 11);
         var iconSize = new Vector2i(32, 32);

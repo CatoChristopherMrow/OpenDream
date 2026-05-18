@@ -48,8 +48,9 @@ public sealed unsafe class NativeProc : DreamProc {
     private readonly WalkManager _walkManager;
     private readonly DreamObjectTree _objectTree;
 
-    public readonly ref struct Bundle(NativeProc proc, DreamProcArguments arguments) {
+    public readonly ref struct Bundle(NativeProc proc, DreamThread thread, DreamProcArguments arguments) {
         public readonly NativeProc Proc = proc;
+        public readonly DreamThread Thread = thread;
 
         // NOTE: Deliberately not using DreamProcArguments here, tis slow.
         public readonly ReadOnlySpan<DreamValue> Arguments = arguments.Values;
@@ -101,7 +102,7 @@ public sealed unsafe class NativeProc : DreamProc {
 
     [MustDisposeResource]
     public DreamValue Call(DreamThread thread, DreamObject? src, DreamObject? usr, [HandlesResourceDisposal] DreamProcArguments arguments) {
-        var bundle = new Bundle(this, arguments);
+        var bundle = new Bundle(this, thread, arguments);
         var result = _handler(bundle, src, usr); // TODO: Include this call in the thread's stack in error traces
 
         arguments.Dispose();

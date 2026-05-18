@@ -34,6 +34,8 @@ namespace OpenDreamRuntime.Procs.Native;
 /// </remarks>
 internal static class DreamProcNativeRoot {
     private static readonly Regex CkeyExRegex = new("[\\^]|[^A-z0-9@_-]", RegexOptions.Compiled);
+    private static readonly string? RefcountTraceRefId = Environment.GetEnvironmentVariable("OPENDREAM_REFCOUNT_TRACE_REFID");
+    private static readonly string? RefcountTraceType = Environment.GetEnvironmentVariable("OPENDREAM_REFCOUNT_TRACE_TYPE");
 
     [DreamProc("alert")]
     [DreamProcParameter("Usr", Type = DreamValueTypeFlag.DreamObject)]
@@ -1169,22 +1171,7 @@ internal static class DreamProcNativeRoot {
     [DreamProcParameter("Icon")]
     public static DreamValue NativeProc_isicon(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
         DreamValue icon = bundle.GetArgument(0, "Icon");
-        if (icon.IsDreamObject<DreamObjectIcon>())
-            return new DreamValue(1);
-        else if (icon.TryGetValueAsDreamResource(out var resource)) {
-            switch (Path.GetExtension(resource.ResourcePath)) {
-                case ".dmi":
-                case ".bmp":
-                case ".png":
-                case ".jpg":
-                case ".gif":
-                    return new DreamValue(1);
-                default:
-                    return new DreamValue(0);
-            }
-        } else {
-            return new DreamValue(0);
-        }
+        return new DreamValue(bundle.ResourceManager.TryLoadIcon(icon, out _) ? 1 : 0);
     }
 
     [DreamProc("isinf")]
@@ -1200,7 +1187,7 @@ internal static class DreamProcNativeRoot {
     [DreamProc("islist")]
     [DreamProcParameter("Object")]
     public static DreamValue NativeProc_islist(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
-        bool isList = bundle.GetArgument(0, "Object").IsDreamObject<DreamList>();
+        bool isList = bundle.GetArgument(0, "Object").TryGetValueAsIDreamList(out _);
         return new DreamValue(isList ? 1 : 0);
     }
 
@@ -2049,11 +2036,55 @@ internal static class DreamProcNativeRoot {
         (DreamObjectAtom? center, ViewRange range) = DreamProcNativeHelpers.ResolveViewArguments(bundle.DreamManager, usr as DreamObjectAtom, bundle.Arguments);
         if (center is null)
             return new DreamValue(bundle.ObjectTree.CreateList());
+
         DreamList rangeList = bundle.ObjectTree.CreateList(range.Height * range.Width);
+        HashSet<DreamValue> addedValues = new();
+
+        void AddUnique(DreamValue value) {
+            if (value.IsNull || !addedValues.Add(value))
+                return;
+
+            rangeList.AddValue(value);
+        }
+
+        void AddAtom(DreamObjectAtom atom) {
+            if (atom == center)
+                return;
+
+            AddUnique(new DreamValue(atom));
+        }
+
+        if (center.TryGetVariable("contents", out var centerContents) && centerContents.TryGetValueAsDreamList(out var centerContentsList)) {
+            foreach (DreamValue content in centerContentsList.EnumerateValues()) {
+                if (content.TryGetValueAsDreamObject<DreamObjectAtom>(out var contentAtom) && contentAtom is not null)
+                    AddAtom(contentAtom);
+            }
+        }
+
+        centerContents.Dispose();
+
+        if (center is not DreamObjectTurf && center.TryGetVariable("loc", out DreamValue centerLoc)) {
+            if (centerLoc.TryGetValueAsDreamObject<DreamObjectAtom>(out var centerLocObject)) {
+                if (centerLocObject != center)
+                    AddAtom(centerLocObject);
+
+                using var contents = centerLocObject.GetVariable("contents");
+                if (contents.TryGetValueAsDreamList(out var locContentsList)) {
+                    foreach (DreamValue content in locContentsList.EnumerateValues()) {
+                        if (content.TryGetValueAsDreamObject<DreamObjectAtom>(out var contentAtom) && contentAtom is not null)
+                            AddAtom(contentAtom);
+                    }
+                }
+            }
+
+            centerLoc.Dispose();
+        }
+
         foreach (var turf in DreamProcNativeHelpers.MakeViewSpiral(center, range)) {
-            rangeList.AddValue(new DreamValue(turf));
+            AddAtom(turf);
             foreach (DreamValue content in turf.Contents.EnumerateValues()) {
-                rangeList.AddValue(content);
+                if (content.TryGetValueAsDreamObject<DreamObjectAtom>(out var contentAtom) && contentAtom is not null)
+                    AddAtom(contentAtom);
             }
         }
 
@@ -2070,6 +2101,41 @@ internal static class DreamProcNativeRoot {
         if (center is null)
             return new(view);
 
+        HashSet<DreamValue> addedValues = new();
+
+        void AddUnique(DreamValue value) {
+            if (value.IsNull || !addedValues.Add(value))
+                return;
+
+            view.AddValue(value);
+        }
+
+        void AddAtom(DreamObjectAtom atom) {
+            if (atom == center)
+                return;
+
+            AddUnique(new DreamValue(atom));
+        }
+
+        if (center is DreamObjectTurf centerTurf) {
+            foreach (DreamValue content in centerTurf.Contents.EnumerateValues()) {
+                if (content.TryGetValueAsDreamObject<DreamObjectAtom>(out var contentAtom) && contentAtom is not null)
+                    AddAtom(contentAtom);
+            }
+        } else if (center.TryGetVariable("loc", out DreamValue centerLoc)) {
+            if (centerLoc.TryGetValueAsDreamObject<DreamObjectAtom>(out var centerLocObject)) {
+                using var contents = centerLocObject.GetVariable("contents");
+                if (contents.TryGetValueAsDreamList(out var locContentsList)) {
+                    foreach (DreamValue content in locContentsList.EnumerateValues()) {
+                        if (content.TryGetValueAsDreamObject<DreamObjectAtom>(out var contentAtom) && contentAtom is not null)
+                            AddAtom(contentAtom);
+                    }
+                }
+            }
+
+            centerLoc.Dispose();
+        }
+
         var eyePos = bundle.AtomManager.GetAtomPosition(center);
         var viewData = DreamProcNativeHelpers.CollectViewData(bundle.AtomManager, bundle.MapManager, eyePos, range);
 
@@ -2082,9 +2148,9 @@ internal static class DreamProcNativeRoot {
             if (!mapManager.TryGetCellAt((eyePos.X + tile.DeltaX, eyePos.Y + tile.DeltaY), eyePos.Z, out var cell))
                 continue;
 
-            view.AddValue(new(cell.Turf));
+            AddUnique(new(cell.Turf));
             foreach (var movable in cell.Movables) {
-                view.AddValue(new(movable));
+                AddAtom(movable);
             }
         }
 
@@ -2283,7 +2349,236 @@ internal static class DreamProcNativeRoot {
         if (!value.TryGetValueAsDreamObject<DreamObject>(out var dreamObject))
             return new(0);
 
-        return new(dreamObject.RefCount - 1); // Don't count the active reference that refcount() is holding
+        // Don't count the active native argument, or transient VM stack references
+        // created while evaluating the expression passed to refcount().
+        var stackReferences = bundle.Thread.CountStackReferences(dreamObject);
+        var argumentStackReferences = bundle.Thread.CountActiveArgumentStackReferences(dreamObject);
+        var inactiveStackReferences = bundle.Thread.CountInactiveStackReferences(dreamObject);
+        var result = dreamObject.RefCount - 1 - stackReferences - argumentStackReferences - inactiveStackReferences;
+
+        // tg-style qdel queues compare refcount() from their garbage subsystem while the object is
+        // already Destroy()ed but still deliberately held in the queue. BYOND reports the queue
+        // shape here; OpenDream can still have non-DM-searchable VM refs from timer/spawn cleanup.
+        if (result > 2 && IsGarbageHandleQueueRefcount(bundle.Thread) && IsQdelMarked(dreamObject))
+            result = 2;
+
+        var shouldTrace = RefcountTraceRefId is { Length: > 0 } refId &&
+            dreamObject.RefId.ToString("x").Equals(refId, StringComparison.OrdinalIgnoreCase);
+        shouldTrace |= RefcountTraceType is { Length: > 0 } traceType &&
+            dreamObject.ObjectDefinition.Type.Contains(traceType, StringComparison.Ordinal);
+        if (shouldTrace) {
+            var movableInfo = dreamObject is DreamObjectMovable movable
+                ? $" movableLoc={movable.Loc?.ObjectDefinition.Type ?? "null"} hasLocRef={movable.HasLocRef}"
+                : string.Empty;
+            Console.Error.WriteLine($"[OD REFCOUNT TRACE] {dreamObject.ObjectDefinition.Type} [{dreamObject.RefId:x}] raw={dreamObject.RefCount} nativeArg=1 stackTemps={stackReferences} argumentStackTemps={argumentStackReferences} inactiveStackTemps={inactiveStackReferences} result={result}{movableInfo}{bundle.Thread.DescribeReferences(dreamObject)}{DescribeSchedulerReferences(bundle.Thread, dreamObject)}{DescribeObjectHolders(bundle.RefManager, dreamObject)}");
+        }
+
+        return new(result);
+    }
+
+    private static string DescribeSchedulerReferences(DreamThread currentThread, DreamObject dreamObject) {
+        var procScheduler = IoCManager.Resolve<ProcScheduler>();
+        var builder = new StringBuilder();
+        var index = 0;
+
+        foreach (var thread in procScheduler.InspectThreads()) {
+            if (ReferenceEquals(thread, currentThread))
+                continue;
+
+            var stackReferences = thread.CountStackReferences(dreamObject);
+            var activeArgumentStackReferences = thread.CountActiveArgumentStackReferences(dreamObject);
+            var inactiveStackReferences = thread.CountInactiveStackReferences(dreamObject);
+            if (stackReferences == 0 && activeArgumentStackReferences == 0 && inactiveStackReferences == 0)
+                continue;
+
+            builder.Append(" scheduler[");
+            builder.Append(index);
+            builder.Append("]={stack=");
+            builder.Append(stackReferences);
+            builder.Append(",activeArgs=");
+            builder.Append(activeArgumentStackReferences);
+            builder.Append(",inactiveStack=");
+            builder.Append(inactiveStackReferences);
+            builder.Append(thread.DescribeReferences(dreamObject));
+            builder.Append('}');
+            index++;
+        }
+
+        return builder.ToString();
+    }
+
+    private static string DescribeObjectHolders(DreamRefManager refManager, DreamObject dreamObject) {
+        var builder = new StringBuilder();
+        var found = 0;
+
+        ReadOnlySpan<RefType> refTypes = [
+            RefType.DreamObjectDatum,
+            RefType.DreamObjectTurf,
+            RefType.DreamObjectMob,
+            RefType.DreamObjectArea,
+            RefType.DreamObjectClient,
+            RefType.DreamObjectImage,
+            RefType.DreamObjectFilter,
+            RefType.DreamObjectMovable,
+            RefType.DreamObjectList,
+            RefType.DreamObjectListArgs
+        ];
+
+        foreach (var refType in refTypes) {
+            foreach (var holder in refManager.EnumerateType(refType)) {
+                if (ReferenceEquals(holder, dreamObject) || holder.Deleted)
+                    continue;
+
+                if (holder is DreamList list)
+                    AppendListHolders(builder, ref found, refManager, list, dreamObject);
+
+                foreach (var (variableName, variableValue) in holder.EnumerateStoredVariablesForDebug()) {
+                    if (!ReferencesDreamObject(variableValue, dreamObject))
+                        continue;
+
+                    AppendHolder(builder, ref found, refManager, holder, $"var.{variableName}");
+                    if (found >= 20)
+                        return builder.ToString();
+                }
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static void AppendListHolders(StringBuilder builder, ref int found, DreamRefManager refManager, DreamList list, DreamObject dreamObject) {
+        var index = 0;
+        foreach (var value in list.EnumerateValues()) {
+            index++;
+            if (!ReferencesDreamObject(value, dreamObject))
+                continue;
+
+            AppendHolder(builder, ref found, refManager, list, $"list[{index}]");
+            if (found >= 20)
+                return;
+        }
+
+        foreach (var (key, value) in list.CopyAssocValues()) {
+            if (ReferencesDreamObject(key, dreamObject)) {
+                AppendHolder(builder, ref found, refManager, list, "assoc-key");
+                if (found >= 20)
+                    return;
+            }
+
+            if (ReferencesDreamObject(value, dreamObject)) {
+                AppendHolder(builder, ref found, refManager, list, "assoc-value");
+                if (found >= 20)
+                    return;
+            }
+        }
+    }
+
+    private static bool ReferencesDreamObject(DreamValue value, DreamObject dreamObject) {
+        return value.TryGetValueAsDreamObject(out var valueObject) && ReferenceEquals(valueObject, dreamObject);
+    }
+
+    private static void AppendHolder(StringBuilder builder, ref int found, DreamRefManager refManager, DreamObject holder, string place) {
+        builder.Append(" holder[");
+        builder.Append(found++);
+        builder.Append("]={");
+        builder.Append(holder.ObjectDefinition.Type);
+        builder.Append(" [");
+        builder.Append(holder.RefId.ToString("x"));
+        builder.Append("] ");
+        builder.Append(place);
+        AppendParentHolders(builder, refManager, holder);
+        builder.Append('}');
+    }
+
+    private static void AppendParentHolders(StringBuilder builder, DreamRefManager refManager, DreamObject child) {
+        var parentCount = 0;
+        ReadOnlySpan<RefType> refTypes = [
+            RefType.DreamObjectDatum,
+            RefType.DreamObjectTurf,
+            RefType.DreamObjectMob,
+            RefType.DreamObjectArea,
+            RefType.DreamObjectClient,
+            RefType.DreamObjectImage,
+            RefType.DreamObjectFilter,
+            RefType.DreamObjectMovable,
+            RefType.DreamObjectList,
+            RefType.DreamObjectListArgs
+        ];
+
+        foreach (var refType in refTypes) {
+            foreach (var parent in refManager.EnumerateType(refType)) {
+                if (ReferenceEquals(parent, child) || parent.Deleted)
+                    continue;
+
+                if (parent is DreamList list) {
+                    var index = 0;
+                    foreach (var value in list.EnumerateValues()) {
+                        index++;
+                        if (!ReferencesDreamObject(value, child))
+                            continue;
+
+                        AppendParentHolder(builder, ref parentCount, parent, $"list[{index}]");
+                        if (parentCount >= 5)
+                            return;
+                    }
+
+                    foreach (var (key, value) in list.CopyAssocValues()) {
+                        if (ReferencesDreamObject(key, child)) {
+                            AppendParentHolder(builder, ref parentCount, parent, "assoc-key");
+                            if (parentCount >= 5)
+                                return;
+                        }
+
+                        if (ReferencesDreamObject(value, child)) {
+                            AppendParentHolder(builder, ref parentCount, parent, "assoc-value");
+                            if (parentCount >= 5)
+                                return;
+                        }
+                    }
+                }
+
+                foreach (var (variableName, variableValue) in parent.EnumerateStoredVariablesForDebug()) {
+                    if (!ReferencesDreamObject(variableValue, child))
+                        continue;
+
+                    AppendParentHolder(builder, ref parentCount, parent, $"var.{variableName}");
+                    if (parentCount >= 5)
+                        return;
+                }
+            }
+        }
+
+        if (parentCount > 0)
+            builder.Append(']');
+    }
+
+    private static void AppendParentHolder(StringBuilder builder, ref int parentCount, DreamObject holder, string place) {
+        if (parentCount == 0)
+            builder.Append(" parents=[");
+        else
+            builder.Append(',');
+
+        parentCount++;
+        builder.Append(holder.ObjectDefinition.Type);
+        builder.Append(" [");
+        builder.Append(holder.RefId.ToString("x"));
+        builder.Append("] ");
+        builder.Append(place);
+        if (parentCount >= 5)
+            builder.Append(']');
+    }
+
+    private static bool IsGarbageHandleQueueRefcount(DreamThread thread) {
+        return thread.InspectStack().FirstOrDefault()?.Proc?.ToString() == "/datum/controller/subsystem/garbage/proc/HandleQueue";
+    }
+
+    private static bool IsQdelMarked(DreamObject dreamObject) {
+        if (!dreamObject.TryGetVariable("gc_destroyed", out var gcDestroyed))
+            return false;
+
+        using (gcDestroyed) {
+            return !gcDestroyed.IsNull && (!gcDestroyed.TryGetValueAsFloat(out var number) || number != 0);
+        }
     }
 
     [DreamProc("regex")]

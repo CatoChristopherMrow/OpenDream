@@ -355,6 +355,10 @@ public class DreamList : DreamObject, IDreamList {
 
     public DreamList Union(DreamList other) {
         DreamList newList = new DreamList(ObjectDefinition, _values.Union(other.EnumerateValues()).ToList(), null);
+        foreach ((DreamValue key, DreamValue value) in GetAssociativeValues()) {
+            newList.SetValue(key, value);
+        }
+
         foreach ((DreamValue key, DreamValue value) in other.GetAssociativeValues()) {
             newList.SetValue(key, value);
         }
@@ -656,9 +660,7 @@ internal sealed class DreamGlobalVars(DreamObjectDefinition listDef) : DreamList
     }
 
     public override IEnumerable<DreamValue> EnumerateValues() {
-        var root = ObjectTree.Root.ObjectDefinition;
-
-        foreach (var key in root.GlobalVariables.Keys) {
+        foreach (var key in DreamManager.GlobalNames) {
             yield return new DreamValue(key);
         }
     }
@@ -668,7 +670,7 @@ internal sealed class DreamGlobalVars(DreamObjectDefinition listDef) : DreamList
             return false;
         }
 
-        return ObjectTree.Root.ObjectDefinition.GlobalVariables.ContainsKey(varName);
+        return DreamManager.GlobalNames.Contains(varName);
     }
 
     public override bool ContainsValue(DreamValue value) {
@@ -680,8 +682,8 @@ internal sealed class DreamGlobalVars(DreamObjectDefinition listDef) : DreamList
             throw new Exception($"Invalid var index {key}");
         }
 
-        var root = ObjectTree.Root.ObjectDefinition;
-        if (!root.GlobalVariables.TryGetValue(varName, out var globalId)) {
+        int globalId = DreamManager.GlobalNames.IndexOf(varName);
+        if (globalId == -1) {
             throw new Exception($"Invalid global {varName}");
         }
 
@@ -692,8 +694,8 @@ internal sealed class DreamGlobalVars(DreamObjectDefinition listDef) : DreamList
 
     public override void SetValue(DreamValue key, DreamValue value, bool allowGrowth = false) {
         if (key.TryGetValueAsString(out var varName)) {
-            var root = ObjectTree.Root.ObjectDefinition;
-            if (!root.GlobalVariables.TryGetValue(varName, out var globalId)) {
+            int globalId = DreamManager.GlobalNames.IndexOf(varName);
+            if (globalId == -1) {
                 throw new Exception($"Cannot set value of undefined global \"{varName}\"");
             }
 
@@ -929,6 +931,13 @@ public sealed class VerbsList(DreamObjectTree objectTree, AtomManager atomManage
 // atom.overlays or atom.underlays list
 // Operates on an object's appearance
 public sealed class DreamOverlaysList(DreamObjectDefinition listDef, DreamObject owner, ServerAppearanceSystem? appearanceSystem, bool isUnderlays) : DreamList(listDef, 0) {
+    private readonly List<DreamValue> _overlayRefs = new();
+
+    protected override void HandleDeletion() {
+        ClearOverlayRefs();
+        base.HandleDeletion();
+    }
+
     [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
@@ -945,10 +954,19 @@ public sealed class DreamOverlaysList(DreamObjectDefinition listDef, DreamObject
     }
 
     public override void Cut(int start = 1, int end = 0) {
+        if (appearanceSystem == null) {
+            int count = _overlayRefs.Count + 1;
+            if (end == 0 || end > count) end = count;
+            ReleaseOverlayRefs(start - 1, end - start);
+            return;
+        }
+
         AtomManager.UpdateAppearance(owner, appearance => {
             var overlaysList = GetOverlaysList(appearance);
             int count = overlaysList.Count + 1;
             if (end == 0 || end > count) end = count;
+            EnsureOverlayRefCount(overlaysList.Count);
+            ReleaseOverlayRefs(start - 1, end - start);
             overlaysList.RemoveRange(start - 1, end - start);
         });
     }
@@ -974,57 +992,93 @@ public sealed class DreamOverlaysList(DreamObjectDefinition listDef, DreamObject
     }
 
     public override void AddValue(DreamValue value) {
-        if (appearanceSystem == null)
+        if (appearanceSystem == null) {
+            _overlayRefs.Add(CreateOverlayRef(value));
             return;
+        }
 
         var overlayAppearance = CreateOverlayAppearance(AtomManager, value, AtomManager.MustGetAppearance(owner).Icon);
         var immutableOverlay = appearanceSystem.AddAppearance(overlayAppearance ?? MutableAppearance.Default);
         overlayAppearance?.Dispose();
+        var overlayRef = CreateOverlayRef(value);
 
         //after UpdateAppearance is done, the atom is set with a new immutable appearance containing a hard ref to the overlay
         //only /mutable_appearance handles it differently, and that's done in DreamObjectImage
         AtomManager.UpdateAppearance(owner, appearance => {
-            GetOverlaysList(appearance).Add(immutableOverlay);
+            var overlaysList = GetOverlaysList(appearance);
+            EnsureOverlayRefCount(overlaysList.Count);
+            overlaysList.Add(immutableOverlay);
+            _overlayRefs.Add(overlayRef);
         });
     }
 
     public void ReplaceWith(DreamValue value) {
-        if (appearanceSystem == null)
+        if (appearanceSystem == null) {
+            ClearOverlayRefs();
+            if (value.TryGetValueAsDreamList(out var headlessValueList)) {
+                foreach (DreamValue overlayValue in headlessValueList.EnumerateValues()) {
+                    _overlayRefs.Add(CreateOverlayRef(overlayValue));
+                }
+            } else if (!value.IsNull) {
+                _overlayRefs.Add(CreateOverlayRef(value));
+            }
+
             return;
+        }
 
         var ownerAppearance = AtomManager.MustGetAppearance(owner);
         var replacementOverlays = new List<ImmutableAppearance>();
+        var replacementRefs = new List<DreamValue>();
 
         if (value.TryGetValueAsDreamList(out var valueList)) {
             foreach (DreamValue overlayValue in valueList.EnumerateValues()) {
-                AddReplacementOverlay(overlayValue, ownerAppearance.Icon, replacementOverlays);
+                AddReplacementOverlay(overlayValue, ownerAppearance.Icon, replacementOverlays, replacementRefs);
             }
         } else if (!value.IsNull) {
-            AddReplacementOverlay(value, ownerAppearance.Icon, replacementOverlays);
+            AddReplacementOverlay(value, ownerAppearance.Icon, replacementOverlays, replacementRefs);
         }
 
         AtomManager.UpdateAppearance(owner, appearance => {
             var overlaysList = GetOverlaysList(appearance);
+            EnsureOverlayRefCount(overlaysList.Count);
+            ClearOverlayRefs();
             overlaysList.Clear();
             overlaysList.AddRange(replacementOverlays);
+            _overlayRefs.AddRange(replacementRefs);
         });
     }
 
     public override void RemoveValue(DreamValue value) {
-        if (appearanceSystem == null)
+        if (appearanceSystem == null) {
+            int refIndex = _overlayRefs.LastIndexOf(value);
+            if (refIndex != -1)
+                ReleaseOverlayRefs(refIndex, 1);
+
             return;
+        }
 
         MutableAppearance? overlayAppearance = CreateOverlayAppearance(AtomManager, value, AtomManager.MustGetAppearance(owner).Icon);
         if (overlayAppearance == null)
             return;
 
         AtomManager.UpdateAppearance(owner, appearance => {
-            GetOverlaysList(appearance).Remove(appearanceSystem.AddAppearance(overlayAppearance, registerAppearance:false));
+            var overlaysList = GetOverlaysList(appearance);
+            EnsureOverlayRefCount(overlaysList.Count);
+            var immutableOverlay = appearanceSystem.AddAppearance(overlayAppearance, registerAppearance:false);
+            int index = overlaysList.IndexOf(immutableOverlay);
+            if (index != -1) {
+                ReleaseOverlayRefs(index, 1);
+                overlaysList.RemoveAt(index);
+            }
+
             overlayAppearance.Dispose();
         });
     }
 
     public override int GetLength() {
+        if (appearanceSystem == null)
+            return _overlayRefs.Count;
+
         return GetOverlaysArray(AtomManager.MustGetAppearance(owner)).Length;
     }
 
@@ -1040,11 +1094,42 @@ public sealed class DreamOverlaysList(DreamObjectDefinition listDef, DreamObject
     private ImmutableAppearance[] GetOverlaysArray(ImmutableAppearance appearance) =>
         isUnderlays ? appearance.Underlays : appearance.Overlays;
 
-    private void AddReplacementOverlay(DreamValue value, int? defaultIcon, List<ImmutableAppearance> replacementOverlays) {
+    private void AddReplacementOverlay(DreamValue value, int? defaultIcon, List<ImmutableAppearance> replacementOverlays, List<DreamValue> replacementRefs) {
         var overlayAppearance = CreateOverlayAppearance(AtomManager, value, defaultIcon);
         var immutableOverlay = appearanceSystem!.AddAppearance(overlayAppearance ?? MutableAppearance.Default);
         overlayAppearance?.Dispose();
         replacementOverlays.Add(immutableOverlay);
+        replacementRefs.Add(CreateOverlayRef(value));
+    }
+
+    private DreamValue CreateOverlayRef(DreamValue value) {
+        if (!value.TryGetValueAsDreamObject(out _))
+            return DreamValue.Null;
+
+        value.IncRef();
+        return value;
+    }
+
+    private void ReleaseOverlayRefs(int start, int count) {
+        for (int i = start; i < start + count; i++) {
+            _overlayRefs[i].DecRef();
+        }
+
+        _overlayRefs.RemoveRange(start, count);
+    }
+
+    private void EnsureOverlayRefCount(int count) {
+        while (_overlayRefs.Count < count) {
+            _overlayRefs.Add(DreamValue.Null);
+        }
+    }
+
+    private void ClearOverlayRefs() {
+        foreach (var overlayRef in _overlayRefs) {
+            overlayRef.DecRef();
+        }
+
+        _overlayRefs.Clear();
     }
 
     public static MutableAppearance? CreateOverlayAppearance(AtomManager atomManager, DreamValue value, int? defaultIcon) {
@@ -1079,6 +1164,11 @@ public sealed class DreamVisContentsList : DreamList {
         _atom = atom;
     }
 
+    protected override void HandleDeletion() {
+        ClearVisContentsRefs();
+        base.HandleDeletion();
+    }
+
     [Obsolete("Deprecated. Use EnumerateValues() instead.")]
     public override List<DreamValue> GetValues() {
         return EnumerateValues().ToList();
@@ -1092,6 +1182,11 @@ public sealed class DreamVisContentsList : DreamList {
     public override void Cut(int start = 1, int end = 0) {
         int count = _visContents.Count + 1;
         if (end == 0 || end > count) end = count;
+
+        for (int i = start - 1; i < end - 1; i++) {
+            RemovePvsOverride(_visContents[i]);
+            _visContents[i].DecRef();
+        }
 
         _visContents.RemoveRange(start - 1, end - start);
         AtomManager.UpdateAppearance(_atom, appearance => {
@@ -1117,11 +1212,13 @@ public sealed class DreamVisContentsList : DreamList {
         if (value.TryGetValueAsDreamObject<DreamObjectMovable>(out var movable)) {
             if (_visContents.Contains(movable))
                 return; // vis_contents cannot contain duplicates
+            movable.IncRef();
             _visContents.Add(movable);
             entity = movable.Entity;
         } else if (value.TryGetValueAsDreamObject<DreamObjectTurf>(out var turf)) {
             if (_visContents.Contains(turf))
                 return; // vis_contents cannot contain duplicates
+            turf.IncRef();
             _visContents.Add(turf);
             entity = EntityUid.Invalid; // TODO: Support turfs in vis_contents
         } else if (value == DreamValue.Null) {
@@ -1141,12 +1238,18 @@ public sealed class DreamVisContentsList : DreamList {
     }
 
     public override void RemoveValue(DreamValue value) {
-        if (!value.TryGetValueAsDreamObject<DreamObjectMovable>(out var movable))
+        if (!value.TryGetValueAsDreamObject<DreamObjectAtom>(out var atom))
             return;
 
-        _visContents.Remove(movable);
+        int index = _visContents.LastIndexOf(atom);
+        if (index == -1)
+            return;
+
+        _visContents.RemoveAt(index);
+        RemovePvsOverride(atom);
+        atom.DecRef();
         AtomManager.UpdateAppearance(_atom, appearance => {
-            appearance.VisContents.Remove(EntityManager.GetNetEntity(movable.Entity));
+            appearance.VisContents.RemoveAt(index);
         });
     }
 
@@ -1169,6 +1272,20 @@ public sealed class DreamVisContentsList : DreamList {
 
     public override bool ContainsValue(DreamValue value) {
         return value.TryGetValueAsDreamObject<DreamObjectAtom>(out var atom) && _visContents.Contains(atom);
+    }
+
+    private void ClearVisContentsRefs() {
+        foreach (var visContent in _visContents) {
+            RemovePvsOverride(visContent);
+            visContent.DecRef();
+        }
+
+        _visContents.Clear();
+    }
+
+    private void RemovePvsOverride(DreamObjectAtom atom) {
+        if (atom is DreamObjectMovable movable)
+            _pvsOverrideSystem?.RemoveGlobalOverride(movable.Entity);
     }
 }
 

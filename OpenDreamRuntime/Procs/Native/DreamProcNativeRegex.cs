@@ -156,7 +156,21 @@ namespace OpenDreamRuntime.Procs.Native {
                     return 1;
                 }
             } else {
-                return startParam.TryGetValueAsInteger(out var start) ? start : 1;
+                if (!startParam.TryGetValueAsInteger(out var start))
+                    return 1;
+
+                using var textVar = regexInstance.GetVariable("text");
+                if (isGlobal && textVar.TryGetValueAsString(out string? lastHaystack) && lastHaystack == haystackString) {
+                    using var indexVar = regexInstance.GetVariable("index");
+                    using var nextVar = regexInstance.GetVariable("next");
+
+                    if (indexVar.TryGetValueAsInteger(out var index) && index == start &&
+                        nextVar.TryGetValueAsInteger(out var next)) {
+                        return next;
+                    }
+                }
+
+                return start;
             }
         }
     }
