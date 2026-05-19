@@ -81,6 +81,7 @@ internal sealed partial class DreamViewOverlay : Overlay {
     private readonly RenderTargetPool _renderTargetPool;
     private readonly Stack<RendererMetaData> _rendererMetaDataRental = new();
     private readonly Stack<RendererMetaData> _rendererMetaDataToReturn = new();
+    private int _sortIndex;
     private readonly MapTextRenderer _mapTextRenderer;
 
     private static readonly Matrix3x2 FlipMatrix = Matrix3x2.Identity with {
@@ -199,6 +200,8 @@ internal sealed partial class DreamViewOverlay : Overlay {
         result.EnsureCapacity(result.Count + icon.Underlays.Count + icon.Overlays.Count + 1);
         RendererMetaData current = RentRendererMetaData();
         current.MainIcon = icon;
+        current.SortIndex = _sortIndex++;
+        current.AppearanceLayer = icon.Appearance.Layer;
         Vector2i iconSize = icon.DMI?.IconSize ?? new Vector2i(IconSize, IconSize);
         Vector2i pixelOffset = AppearancePositioning.GetPixelOffset(
             icon.Appearance,
@@ -287,9 +290,11 @@ internal sealed partial class DreamViewOverlay : Overlay {
         // Ignore plane masters here, they're handled in DrawPlanes()
         if (!string.IsNullOrEmpty(current.RenderTarget) && current.RenderTarget[0] != '*' && !current.IsPlaneMaster) {
             RendererMetaData renderTargetPlaceholder = RentRendererMetaData();
+            renderTargetPlaceholder.SortIndex = _sortIndex++;
 
             //transform, color, alpha, filters - they should all already have been applied, so we leave them null in the placeholder
             renderTargetPlaceholder.MainIcon = current.MainIcon;
+            renderTargetPlaceholder.AppearanceLayer = current.AppearanceLayer;
             renderTargetPlaceholder.Position = current.Position;
             renderTargetPlaceholder.Uid = current.Uid;
             renderTargetPlaceholder.ClickUid = current.Uid;
@@ -383,6 +388,8 @@ internal sealed partial class DreamViewOverlay : Overlay {
         if(icon.Appearance.Maptext != null){ //if has maptext
             RendererMetaData maptext = RentRendererMetaData();
             maptext.MainIcon = icon;
+            maptext.SortIndex = _sortIndex++;
+            maptext.AppearanceLayer = current.AppearanceLayer;
             maptext.Position = current.Position;
             maptext.Uid = current.Uid;
             maptext.ClickUid = current.Uid;
@@ -641,6 +648,7 @@ internal sealed partial class DreamViewOverlay : Overlay {
 
     private void CollectVisibleSprites(ViewAlgorithm.Tile?[,] tiles, EntityUid gridUid, MapGridComponent grid, TileRef eyeTile, sbyte seeVis, SightFlags sight, Box2 worldAABB) {
         _spriteContainer.Clear();
+        _sortIndex = 0;
 
         // This exists purely because the tiebreaker var needs to exist somewhere
         // It's set to 0 again before every unique call to ProcessIconComponents

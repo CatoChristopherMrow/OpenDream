@@ -89,6 +89,7 @@ public sealed partial class DreamConnection {
     [ViewVariables] private readonly Dictionary<int, Action<DreamValue>> _promptEvents = new();
     [ViewVariables] private int _nextPromptEvent = 1;
     private readonly Dictionary<string, DreamResource> _permittedBrowseRscFiles = new();
+    private readonly HashSet<string> _pendingBrowseRscRequests = new();
     private DreamObjectMob? _mob;
 
     private readonly ISawmill _sawmill = Logger.GetSawmill("opendream.connection");
@@ -491,6 +492,18 @@ public sealed partial class DreamConnection {
             _permittedBrowseRscFiles.TryAdd(resourceFilename, resource);
         }
 
+        if (_pendingBrowseRscRequests.Remove(filename)) {
+            SendBrowseResourceResponse(filename, resource);
+        }
+
+        Session?.Channel.SendMessage(msg);
+    }
+
+    private void SendBrowseResourceResponse(string filename, DreamResource resource) {
+        var msg = new MsgBrowseResourceResponse() {
+            Filename = filename,
+            Data = resource.ResourceData!, //honestly if this is null, something mega fucked up has happened and we should error hard
+        };
         Session?.Channel.SendMessage(msg);
     }
 
@@ -498,13 +511,10 @@ public sealed partial class DreamConnection {
         filename = NormalizeBrowseRscFilename(filename);
 
         if(_permittedBrowseRscFiles.TryGetValue(filename, out var dreamResource)) {
-            var msg = new MsgBrowseResourceResponse() {
-                Filename = filename,
-                Data = dreamResource.ResourceData!, //honestly if this is null, something mega fucked up has happened and we should error hard
-            };
-            Session?.Channel.SendMessage(msg);
+            SendBrowseResourceResponse(filename, dreamResource);
         } else {
-            _sawmill.Error($"Client({Session}) requested an unpermitted browse_rsc file ({filename}).");
+            _pendingBrowseRscRequests.Add(filename);
+            _sawmill.Debug($"Client({Session}) requested a browse_rsc file before it was permitted ({filename}).");
         }
     }
 

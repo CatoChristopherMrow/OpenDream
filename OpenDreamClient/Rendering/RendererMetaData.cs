@@ -11,10 +11,12 @@ internal sealed class RendererMetaData : IComparable<RendererMetaData> {
     public MapFormat MapFormat;
     public int Plane; //true plane value may be different from appearance plane value, due to special flags
     public float Layer; //ditto for layer
+    public float AppearanceLayer;
     public EntityUid Uid;
     public EntityUid ClickUid; //the UID of the object clicks on this should be passed to (ie, for overlays)
     public bool IsScreen;
     public int TieBreaker; //Used for biasing render order (ie, for overlays)
+    public int SortIndex; //Preserves BYOND-visible insertion order when all other ordering matches
     public Color ColorToApply;
     public ColorMatrix ColorMatrixToApply;
     public float AlphaToApply;
@@ -46,10 +48,12 @@ internal sealed class RendererMetaData : IComparable<RendererMetaData> {
         MapFormat = MapFormat.TopDown;
         Plane = 0;
         Layer = 0;
+        AppearanceLayer = 0;
         Uid = EntityUid.Invalid;
         ClickUid = EntityUid.Invalid;
         IsScreen = false;
         TieBreaker = 0;
+        SortIndex = 0;
         ColorToApply = Color.White;
         ColorMatrixToApply = ColorMatrix.Identity;
         AlphaToApply = 1.0f;
@@ -144,8 +148,8 @@ internal sealed class RendererMetaData : IComparable<RendererMetaData> {
 
         //FLOAT_LAYER must be sorted local to the thing they're floating on, and since all overlays/underlays share their parent's UID, we
         //can do that here.
-        if (MainIcon?.Appearance?.Layer < -1 && other.MainIcon?.Appearance?.Layer < -1) { //if these are FLOAT_LAYER, sort amongst them
-            val = MainIcon.Appearance.Layer.CompareTo(other.MainIcon.Appearance.Layer);
+        if (AppearanceLayer < -1 && other.AppearanceLayer < -1) { //if these are FLOAT_LAYER, sort amongst them
+            val = AppearanceLayer.CompareTo(other.AppearanceLayer);
             if (val != 0) {
                 return val;
             }
@@ -156,8 +160,6 @@ internal sealed class RendererMetaData : IComparable<RendererMetaData> {
             return val;
         }
 
-        // All else being the same, group them by icon.
-        // This allows Clyde to batch the draw calls more efficiently without changing BYOND's draw order.
-        return (MainIcon?.Appearance?.Icon ?? 0) - (other.MainIcon?.Appearance?.Icon ?? 0);
+        return SortIndex.CompareTo(other.SortIndex);
     }
 }
