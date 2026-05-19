@@ -1,3 +1,4 @@
+// NOBYOND - OpenDream icon object filtering regression test
 /proc/RunTest()
 	var/icon/source = icon('icons.dmi', "mob")
 	source.Insert('icons.dmi', "other")

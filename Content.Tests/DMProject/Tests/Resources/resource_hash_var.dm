@@ -1,3 +1,4 @@
+// NOBYOND - resource.hash is an OpenDream implementation smoke test
 //# issue 2194
 
 /datum/resource_hash_holder

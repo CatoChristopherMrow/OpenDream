@@ -1,3 +1,4 @@
+// NOBYOND - OpenDream runtime-initialized var regression test
 /var/runtime_initialized_parent_path = /obj/runtime_initialized_parent_item
 
 /obj/runtime_initialized_parent_item

@@ -1,3 +1,4 @@
+// NOBYOND - implementation smoke test is not a BYOND parity test
 /proc/RunTest()
 	var/database/db = new("reset.db")
 	var/database/query/query = new("CREATE TABLE test (id int, name string)")

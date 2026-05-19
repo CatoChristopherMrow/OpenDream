@@ -1,3 +1,4 @@
+// NOBYOND - OpenDream-specific animate(null) compatibility smoke test
 /proc/RunTest()
 	ASSERT(isnull(animate(null)))
 	ASSERT(isnull(animate(null, alpha = 128, time = 1)))

@@ -1,3 +1,4 @@
+// NOBYOND - OpenDream normalizes empty appearance icon_state values to null
 /obj/empty_icon_state
 	icon_state = ""
 

@@ -1,3 +1,4 @@
+// NOBYOND - OpenDream refcount regression test
 /proc/RunTest()
 	var/datum/kept = new
 	var/list/holders = list(new /datum, kept, new /datum)

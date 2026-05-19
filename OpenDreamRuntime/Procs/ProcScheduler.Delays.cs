@@ -8,7 +8,8 @@ namespace OpenDreamRuntime.Procs;
 public sealed partial class ProcScheduler {
     [Dependency] private IGameTiming _gameTiming = default!;
 
-    private PriorityQueue<DelayTicker, uint> _tickers = new();
+    private PriorityQueue<DelayTicker, (uint TicksAt, ulong Sequence)> _tickers = new();
+    private ulong _nextDelaySequence = 0;
 
     // This is for deferred tasks that need to fire in the current tick.
     private readonly Queue<TaskCompletionSource> _deferredTasks = new();
@@ -53,7 +54,8 @@ public sealed partial class ProcScheduler {
 
         var tcs = new TaskCompletionSource();
 
-        InsertTask(new DelayTicker(tcs) { TicksAt = _gameTiming.CurTick.Value + (uint)ticks }); //safe cast because ticks is always positive here
+        var ticksAt = _gameTiming.CurTick.Value + (uint)ticks;
+        InsertTask(new DelayTicker(tcs) { TicksAt = ticksAt }); //safe cast because ticks is always positive here
         return tcs.Task;
     }
 
@@ -63,7 +65,7 @@ public sealed partial class ProcScheduler {
     /// </summary>
     /// <param name="ticker"></param>
     private void InsertTask(DelayTicker ticker) {
-        _tickers.Enqueue(ticker, ticker.TicksAt);
+        _tickers.Enqueue(ticker, (ticker.TicksAt, _nextDelaySequence++));
     }
 
     private void UpdateDelays() {

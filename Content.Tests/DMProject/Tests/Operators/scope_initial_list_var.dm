@@ -1,3 +1,4 @@
+// NOBYOND - OpenDream accepts scoped initial list values BYOND rejects here
 /obj/scope_initial_list_source
 	var/list/materials = list(/datum = 35)
 

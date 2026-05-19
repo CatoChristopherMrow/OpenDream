@@ -38,6 +38,8 @@ public class DreamObject {
     [Access(typeof(DreamObject))]
     public int RefCount = 1; // Starts at 1 because the code creating us is considered to hold a ref to us now
 
+    private bool _runningDel;
+
     public virtual bool ShouldCallNew => true;
 
     // Shortcuts to IoC dependencies & entity systems
@@ -159,6 +161,9 @@ public class DreamObject {
             return;
 
         if (Deleting) {
+            if (_runningDel)
+                return;
+
             HandleDeletion();
             return;
         }
@@ -230,9 +235,17 @@ public class DreamObject {
             // Don't bother running Del() if there's no code in it
             var datumBaseProc = delProc is DMProc {Bytecode.Length: 0};
             if (!datumBaseProc) {
-                DreamThread.Run(delProc, this, null).Dispose();
+                _runningDel = true;
+                try {
+                    DreamThread.Run(delProc, this, null).Dispose();
+                } finally {
+                    _runningDel = false;
+                }
             }
         }
+
+        if (Deleted)
+            return;
 
         if (!force && !ShouldDelete()) {
             Deleting = false;

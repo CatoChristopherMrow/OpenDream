@@ -293,6 +293,13 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
         return dreamObject;
     }
 
+    public DreamObject? GetRawDreamObject() {
+        if (Type != DreamValueType.DreamObject)
+            ThrowInvalidCastDreamObject();
+
+        return Unsafe.As<DreamObject?>(_refValue);
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void ThrowInvalidCastDreamObject() {
         throw new InvalidCastException($"Value {this} was not the expected type of DreamObject");

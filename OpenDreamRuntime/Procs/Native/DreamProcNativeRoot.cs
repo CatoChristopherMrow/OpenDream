@@ -621,7 +621,7 @@ internal static class DreamProcNativeRoot {
         DreamValue path = bundle.GetArgument(0, "Path");
 
         if (path.TryGetValueAsString(out var rscPath)) {
-            var resource = bundle.ResourceManager.LoadResource(rscPath);
+            var resource = bundle.ResourceManager.LoadResource(rscPath, preserveResourcePath: true);
 
             return new DreamValue(resource);
         }

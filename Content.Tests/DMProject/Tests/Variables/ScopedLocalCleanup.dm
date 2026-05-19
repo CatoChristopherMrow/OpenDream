@@ -1,3 +1,4 @@
+// NOBYOND - OpenDream refcount regression test
 /proc/RunTest()
 	var/datum/target = new
 	ASSERT(refcount(target) == 1)

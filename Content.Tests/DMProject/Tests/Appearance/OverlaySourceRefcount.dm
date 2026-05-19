@@ -1,3 +1,4 @@
+// NOBYOND - OpenDream refcount regression test
 /proc/RunTest()
 	world.maxx = 1
 	world.maxy = 1

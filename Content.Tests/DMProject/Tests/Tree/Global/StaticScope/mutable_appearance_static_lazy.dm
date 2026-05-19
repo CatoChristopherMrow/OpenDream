@@ -1,3 +1,4 @@
+// NOBYOND - OpenDream static initialization laziness regression test
 var/static/mutable_appearance_static_initialized = FALSE
 
 /proc/make_static_mutable_appearance()

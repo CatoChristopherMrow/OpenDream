@@ -86,22 +86,28 @@ public sealed partial class DreamResourceManager {
     }
 
     public DreamResource LoadResource(string resourcePath) {
-        resourcePath = NormalizeResourcePath(resourcePath)!;
+        return LoadResource(resourcePath, preserveResourcePath: false);
+    }
+
+    public DreamResource LoadResource(string resourcePath, bool preserveResourcePath) {
+        var normalizedResourcePath = NormalizeResourcePath(resourcePath)!;
+        var cachePath = preserveResourcePath ? resourcePath : normalizedResourcePath;
         DreamResource resource;
         int resourceId;
 
         DreamResource GetResource() {
-            var filePath = GetFilePath(resourcePath);
+            var filePath = GetFilePath(normalizedResourcePath);
+            var storedResourcePath = preserveResourcePath ? resourcePath : normalizedResourcePath;
 
             // Create a new type of resource based on its extension
-            switch (Path.GetExtension(resourcePath)) {
+            switch (Path.GetExtension(normalizedResourcePath)) {
                 case ".dmf":
-                    resource = new DMFResource(resourceId, filePath, resourcePath, _serializationManager);
+                    resource = new DMFResource(resourceId, filePath, storedResourcePath, _serializationManager);
                     break;
                 case ".dmi":
                 case ".png":
                 case ".bmp":
-                    resource = new IconResource(resourceId, filePath, resourcePath);
+                    resource = new IconResource(resourceId, filePath, storedResourcePath);
                     break;
                 case ".jpg":
                 case ".rsi": // RT-specific, not in BYOND
@@ -110,20 +116,20 @@ public sealed partial class DreamResourceManager {
                     goto default;
 
                 default:
-                    resource = new DreamResource(resourceId, filePath, resourcePath);
+                    resource = new DreamResource(resourceId, filePath, storedResourcePath);
                     break;
             }
 
             return resource;
         }
 
-        if (_resourcePathToId.TryGetValue(resourcePath, out resourceId)) {
+        if (_resourcePathToId.TryGetValue(cachePath, out resourceId)) {
             resource = _resourceCache[resourceId];
         } else {
             resourceId = _resourceCache.Count;
             resource = GetResource();
             _resourceCache.Add(resource);
-            _resourcePathToId.Add(resourcePath, resourceId);
+            _resourcePathToId.Add(cachePath, resourceId);
         }
 
         ProcessQueuedResourceLoads();
