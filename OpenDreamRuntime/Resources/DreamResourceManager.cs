@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using OpenDreamRuntime.Objects;
 using OpenDreamRuntime.Objects.Types;
 using OpenDreamShared.Network.Messages;
 using OpenDreamShared.Resources;
@@ -158,9 +159,31 @@ public sealed partial class DreamResourceManager {
 
     public bool TryLoadResource(string resourcePathOrRef, [NotNullWhen(true)] out DreamResource? resource) {
         resource = null;
-        //TODO lookup by \ref[] string
+
+        if (TryParseResourceRef(resourcePathOrRef, out var resourceId))
+            return TryLoadResource(resourceId, out resource);
+
         resourcePathOrRef = NormalizeResourcePath(resourcePathOrRef)!;
-        return _resourcePathToId.TryGetValue(resourcePathOrRef, out var resourceId) && TryLoadResource(resourceId, out resource);
+        return _resourcePathToId.TryGetValue(resourcePathOrRef, out var pathResourceId) && TryLoadResource(pathResourceId, out resource);
+    }
+
+    private static bool TryParseResourceRef(string resourcePathOrRef, out int resourceId) {
+        resourceId = 0;
+
+        if (!resourcePathOrRef.StartsWith('[') || !resourcePathOrRef.EndsWith(']'))
+            return false;
+
+        var refText = resourcePathOrRef[1..^1];
+        if (!refText.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ||
+            !uint.TryParse(refText[2..], System.Globalization.NumberStyles.HexNumber, null, out var refValue))
+            return false;
+
+        var refType = (RefType)(refValue & DreamRefManager.RefTypeMask);
+        if (refType is not (RefType.DreamResourceIcon or RefType.DreamResource))
+            return false;
+
+        resourceId = (int)(refValue & DreamRefManager.RefIdMask);
+        return true;
     }
 
     public bool TryLoadIcon(DreamValue value, [NotNullWhen(true)] out IconResource? icon) {

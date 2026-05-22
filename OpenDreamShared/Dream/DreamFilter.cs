@@ -76,6 +76,9 @@ public partial record DreamFilter {
                 if (dropShadow.Size - dropShadow.Y > 0)
                     requiredSpace.Y += (dropShadow.Size + dropShadow.Y) * 2;
                 break;
+            case DreamFilterDisplace:
+                requiredSpace *= 2;
+                break;
             case DreamFilterOutline outline:
                 requiredSpace += new Vector2(outline.Size) * 2;
                 break;

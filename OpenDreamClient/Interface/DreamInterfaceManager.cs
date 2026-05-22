@@ -512,8 +512,14 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
     }
 
     public void FrameUpdate(FrameEventArgs frameEventArgs) {
-        if (DefaultMap != null)
-            DefaultMap.Viewport.Eye = _eyeManager.CurrentEye;
+        var currentEye = _eyeManager.CurrentEye;
+
+        foreach (ControlWindow window in Windows.Values) {
+            foreach (InterfaceControl control in window.ChildControls) {
+                if (control is ControlMap { Viewport.Visible: true } controlMap)
+                    controlMap.Viewport.Eye = currentEye;
+            }
+        }
     }
 
     public InterfaceElement? FindElementWithId(string id) {
@@ -939,7 +945,14 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
             if (CheckParserErrors())
                 return;
 
-            if (element == null && attributes.TryGetValue("parent", out var parentId)) {
+            if (attributes.TryGetValue("parent", out var parentId) && string.IsNullOrEmpty(parentId)) {
+                // BYOND uses parent="" to detach/remove an element. If the element was already
+                // gone, there is nothing left to do.
+                if (element == null)
+                    return;
+
+                RemoveElement(element);
+            } else if (element == null && attributes.TryGetValue("parent", out parentId)) {
                 var parent = FindElementWithId(parentId);
                 if (parent == null) {
                     _sawmill.Error($"Attempted to create an element with nonexistent parent \"{parentId}\" ({winsetParams})");
@@ -966,6 +979,18 @@ internal sealed partial class DreamInterfaceManager : IDreamInterfaceManager {
                     _sawmill.Error($"Invalid element \"{controlId}\"");
             }
         }
+    }
+
+    private bool RemoveElement(InterfaceElement element) {
+        if (element is not InterfaceControl control)
+            return false;
+
+        foreach (var window in Windows.Values) {
+            if (window.RemoveChild(control))
+                return true;
+        }
+
+        return false;
     }
 
     public string WinGet(string controlId, string queryValue, bool forceJson = false, bool forceSnowflake = false) {

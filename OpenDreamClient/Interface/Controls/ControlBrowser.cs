@@ -2,9 +2,12 @@
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Threading.Tasks;
 using System.Web;
 using OpenDreamShared.Interface.Descriptors;
 using OpenDreamClient.Resources;
+using OpenDreamClient.Resources.ResourceTypes;
+using OpenDreamShared.Dream;
 using OpenDreamShared.Network.Messages;
 using Robust.Client.Graphics;
 using Robust.Client.UserInterface;
@@ -21,8 +24,10 @@ internal sealed partial class ControlBrowser : InterfaceControl {
     private const string BrowserStorageShim = """
         <script>
         (function() {
-            if (window.hubStorage)
+            if (window.__opendreamStorageShim)
                 return;
+
+            window.__opendreamStorageShim = true;
 
             function key(name) {
                 return "opendream:byondstorage:" + String(name);
@@ -127,6 +132,349 @@ internal sealed partial class ControlBrowser : InterfaceControl {
                 });
             } catch (err) {
             }
+
+            var nativeControls = {};
+            var nativeControlFrame;
+            var originalWinset;
+            var originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+            var lastMeasuredElement;
+            var lastMeasuredElementTime = 0;
+            var nativeControlMaintenanceTimer;
+            window.__opendreamNativeControls = nativeControls;
+
+            Element.prototype.getBoundingClientRect = function() {
+                var rect = originalGetBoundingClientRect.apply(this, arguments);
+                lastMeasuredElement = this;
+                lastMeasuredElementTime = performance.now();
+                return rect;
+            };
+
+            function parsePair(value, separator) {
+                if (typeof value !== "string")
+                    return null;
+
+                var parts = value.split(separator);
+                if (parts.length !== 2)
+                    return null;
+
+                return {
+                    x: Number(parts[0]) || 0,
+                    y: Number(parts[1]) || 0
+                };
+            }
+
+            function updateOwnGeometry(id, params) {
+                if (id !== Byond.windowId || !params || typeof params !== "object" || !params.pos)
+                    return;
+
+                var position = parsePair(params.pos, ",");
+                if (!position)
+                    return;
+
+                window.__opendreamGeometryShim.set(position.x, position.y);
+            }
+
+            function copyParams(params) {
+                var copy = {};
+                for (var key in params) {
+                    if (Object.prototype.hasOwnProperty.call(params, key))
+                        copy[key] = params[key];
+                }
+
+                return copy;
+            }
+
+            function makeParamsKey(params) {
+                return [
+                    params.parent || "",
+                    params.id || "",
+                    params.type || "",
+                    params.pos || "",
+                    params.size || "",
+                    params["opendream-clip-offset"] || "",
+                    params["opendream-full-size"] || ""
+                ].join("|");
+            }
+
+            function sendNativeControlWinset(id, params, entry) {
+                if (entry) {
+                    var key = makeParamsKey(params);
+                    if (entry.lastSentKey === key)
+                        return;
+
+                    entry.lastSentKey = key;
+                }
+
+                originalWinset.call(Byond, id, params);
+            }
+
+            function observeNativeControlElement(entry, element) {
+                if (entry.element === element)
+                    return;
+
+                if (entry.resizeObserver) {
+                    entry.resizeObserver.disconnect();
+                    entry.resizeObserver = null;
+                }
+
+                entry.element = element;
+                if (window.ResizeObserver) {
+                    entry.resizeObserver = new ResizeObserver(scheduleNativeControlUpdate);
+                    entry.resizeObserver.observe(element);
+                }
+            }
+
+            function hasNativeControls() {
+                for (var id in nativeControls) {
+                    if (Object.prototype.hasOwnProperty.call(nativeControls, id))
+                        return true;
+                }
+
+                return false;
+            }
+
+            function ensureNativeControlMaintenance() {
+                if (nativeControlMaintenanceTimer)
+                    return;
+
+                nativeControlMaintenanceTimer = setInterval(function() {
+                    if (!hasNativeControls()) {
+                        clearInterval(nativeControlMaintenanceTimer);
+                        nativeControlMaintenanceTimer = null;
+                        return;
+                    }
+
+                    scheduleNativeControlUpdate();
+                }, 125);
+            }
+
+            function intersectRects(a, b) {
+                var left = Math.max(a.left, b.left);
+                var top = Math.max(a.top, b.top);
+                var right = Math.min(a.right, b.right);
+                var bottom = Math.min(a.bottom, b.bottom);
+
+                return {
+                    left: left,
+                    top: top,
+                    right: right,
+                    bottom: bottom,
+                    width: Math.max(0, right - left),
+                    height: Math.max(0, bottom - top)
+                };
+            }
+
+            function getVisibleRect(element, rect) {
+                var visible = {
+                    left: rect.left,
+                    top: rect.top,
+                    right: rect.right,
+                    bottom: rect.bottom,
+                    width: rect.right - rect.left,
+                    height: rect.bottom - rect.top
+                };
+
+                for (var parent = element.parentElement; parent; parent = parent.parentElement) {
+                    var style = window.getComputedStyle(parent);
+                    var overflow = style.overflow + style.overflowX + style.overflowY;
+                    if (overflow.indexOf("hidden") !== -1 ||
+                            overflow.indexOf("auto") !== -1 ||
+                            overflow.indexOf("scroll") !== -1 ||
+                            overflow.indexOf("overlay") !== -1 ||
+                            overflow.indexOf("clip") !== -1) {
+                        visible = intersectRects(visible, originalGetBoundingClientRect.call(parent));
+                    }
+                }
+
+                visible = intersectRects(visible, {
+                    left: 0,
+                    top: 0,
+                    right: window.innerWidth,
+                    bottom: window.innerHeight
+                });
+
+                return visible;
+            }
+
+            function findElementForNativeControl(params) {
+                var position = parsePair(params.pos, ",");
+                var size = parsePair(params.size, "x");
+                if (!position || !size)
+                    return null;
+
+                var scale = window.devicePixelRatio || 1;
+                var expectedLeft = position.x / scale;
+                var expectedTop = position.y / scale;
+                var expectedWidth = size.x / scale;
+                var expectedHeight = size.y / scale;
+                var best = null;
+                var bestScore = 8;
+                var elements = document.body ? document.body.getElementsByTagName("div") : [];
+
+                for (var i = 0; i < elements.length; i++) {
+                    var element = elements[i];
+                    var rect = originalGetBoundingClientRect.call(element);
+                    var width = rect.right - rect.left;
+                    var height = rect.bottom - rect.top;
+                    if (width <= 0 || height <= 0)
+                        continue;
+
+                    var score = Math.abs(rect.left - expectedLeft) +
+                        Math.abs(rect.top - expectedTop) +
+                        Math.abs(width - expectedWidth) +
+                        Math.abs(height - expectedHeight);
+
+                    if (score < bestScore) {
+                        best = element;
+                        bestScore = score;
+                    }
+                }
+
+                return best;
+            }
+
+            function updateNativeControl(id, entry) {
+                if (!originalWinset)
+                    return;
+
+                var element = entry.element;
+                if (!element || !document.body || !document.body.contains(element)) {
+                    element = findElementForNativeControl(entry.params);
+                    if (element)
+                        observeNativeControlElement(entry, element);
+                }
+
+                if (!element) {
+                    sendNativeControlWinset(id, entry.params, entry);
+                    return;
+                }
+
+                var scale = window.devicePixelRatio || 1;
+                var rect = originalGetBoundingClientRect.call(element);
+                var visible = getVisibleRect(element, rect);
+                var params = copyParams(entry.params);
+
+                if (visible.width <= 0 || visible.height <= 0) {
+                    entry.lastRect = {
+                        left: rect.left,
+                        top: rect.top,
+                        right: rect.right,
+                        bottom: rect.bottom,
+                        width: rect.right - rect.left,
+                        height: rect.bottom - rect.top
+                    };
+                    entry.lastVisible = visible;
+                    entry.lastSentParams = { parent: "" };
+                    sendNativeControlWinset(id, { parent: "" }, entry);
+                    return;
+                }
+
+                params.pos = Math.round(visible.left * scale) + "," + Math.round(visible.top * scale);
+                params.size = Math.round(visible.width * scale) + "x" + Math.round(visible.height * scale);
+                params["opendream-clip-offset"] = Math.round((visible.left - rect.left) * scale) + "," + Math.round((visible.top - rect.top) * scale);
+                params["opendream-full-size"] = Math.round((rect.right - rect.left) * scale) + "x" + Math.round((rect.bottom - rect.top) * scale);
+
+                entry.lastRect = {
+                    left: rect.left,
+                    top: rect.top,
+                    right: rect.right,
+                    bottom: rect.bottom,
+                    width: rect.right - rect.left,
+                    height: rect.bottom - rect.top
+                };
+                entry.lastVisible = visible;
+                entry.lastSentParams = copyParams(params);
+                entry.lastElementTag = element.tagName;
+                entry.lastElementClass = element.className || "";
+
+                sendNativeControlWinset(id, params, entry);
+            }
+
+            function removeNativeControl(id) {
+                var entry = nativeControls[id];
+                if (!entry) {
+                    originalWinset.call(Byond, id, { parent: "" });
+                    return;
+                }
+
+                requestAnimationFrame(function() {
+                    var current = nativeControls[id];
+                    var element = current && current.element;
+                    if (element && document.body && document.body.contains(element)) {
+                        updateNativeControl(id, current);
+                        return;
+                    }
+
+                    if (current && current.resizeObserver)
+                        current.resizeObserver.disconnect();
+
+                    delete nativeControls[id];
+                    originalWinset.call(Byond, id, { parent: "" });
+                });
+            }
+
+            function scheduleNativeControlUpdate() {
+                if (nativeControlFrame)
+                    return;
+
+                nativeControlFrame = requestAnimationFrame(function() {
+                    nativeControlFrame = null;
+                    updateNativeControls();
+                });
+            }
+
+            function updateNativeControls() {
+                for (var id in nativeControls) {
+                    if (Object.prototype.hasOwnProperty.call(nativeControls, id))
+                        updateNativeControl(id, nativeControls[id]);
+                }
+            }
+
+            function updateNativeControlsForScroll() {
+                scheduleNativeControlUpdate();
+            }
+
+            function installNativeControlWinsetHook() {
+                if (!window.Byond || typeof Byond.winset !== "function") {
+                    setTimeout(installNativeControlWinsetHook, 0);
+                    return;
+                }
+
+                if (Byond.__opendreamNativeControlWinsetHook)
+                    return;
+
+                originalWinset = Byond.winset;
+                Byond.__opendreamNativeControlWinsetHook = true;
+                Byond.winset = function(id, params) {
+                    updateOwnGeometry(id, params);
+
+                    if (params && typeof params === "object" && params.pos && params.size) {
+                        var entry = nativeControls[id] || {};
+                        var measuredElement = performance.now() - lastMeasuredElementTime < 50
+                            ? lastMeasuredElement
+                            : null;
+                        entry.params = copyParams(params);
+                        var element = measuredElement || findElementForNativeControl(params) || entry.element;
+                        if (element)
+                            observeNativeControlElement(entry, element);
+                        nativeControls[id] = entry;
+                        ensureNativeControlMaintenance();
+                        updateNativeControl(id, entry);
+                        return;
+                    }
+
+                    if (params && typeof params === "object" && params.parent === "") {
+                        removeNativeControl(id);
+                        return;
+                    }
+
+                    return originalWinset.apply(this, arguments);
+                };
+            }
+
+            installNativeControlWinsetHook();
+            window.addEventListener("scroll", updateNativeControlsForScroll, true);
+            window.addEventListener("resize", scheduleNativeControlUpdate);
         })();
         </script>
         """;
@@ -146,6 +494,11 @@ internal sealed partial class ControlBrowser : InterfaceControl {
         { "txt", "text/plain" }
     };
 
+    private const uint RefTypeMask = 0xFF000000;
+    private const uint RefIdMask = 0x00FFFFFF;
+    private const uint DreamResourceIconRefType = 0x0C000000;
+    private const uint DreamResourceRefType = 0x27000000;
+
     [Dependency] private IResourceManager _resourceManager = default!;
     [Dependency] private IClientNetManager _netManager = default!;
     [Dependency] private IDreamResourceManager _dreamResource = default!;
@@ -159,13 +512,14 @@ internal sealed partial class ControlBrowser : InterfaceControl {
     private Stream AddBrowserShims(Stream stream) {
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: false);
         var html = reader.ReadToEnd();
+        html = DisableRemoteTguiStorageCdn(html);
 
-        if (html.Contains("window.hubStorage", StringComparison.Ordinal) &&
+        if (html.Contains("window.__opendreamStorageShim", StringComparison.Ordinal) &&
             html.Contains("window.__opendreamGeometryShim", StringComparison.Ordinal))
             return new MemoryStream(Encoding.UTF8.GetBytes(html));
 
         var shims = string.Empty;
-        if (!html.Contains("window.hubStorage", StringComparison.Ordinal))
+        if (!html.Contains("window.__opendreamStorageShim", StringComparison.Ordinal))
             shims += BrowserStorageShim;
         if (!html.Contains("window.__opendreamGeometryShim", StringComparison.Ordinal)) {
             shims += BrowserGeometryShimTemplate
@@ -182,6 +536,21 @@ internal sealed partial class ControlBrowser : InterfaceControl {
         }
 
         return new MemoryStream(Encoding.UTF8.GetBytes(html));
+    }
+
+    private static string DisableRemoteTguiStorageCdn(string html) {
+        const string StorageCdnMetaPrefix = "<meta id=\"tgui:storagecdn\" content=\"";
+
+        var metaIndex = html.IndexOf(StorageCdnMetaPrefix, StringComparison.OrdinalIgnoreCase);
+        if (metaIndex < 0)
+            return html;
+
+        var valueStart = metaIndex + StorageCdnMetaPrefix.Length;
+        var valueEnd = html.IndexOf('"', valueStart);
+        if (valueEnd < 0)
+            return html;
+
+        return html[..valueStart] + html[valueEnd..];
     }
 
     public ControlBrowser(ControlDescriptor controlDescriptor, ControlWindow window)
@@ -311,13 +680,18 @@ internal sealed partial class ControlBrowser : InterfaceControl {
                 if (path.Filename.Equals("favicon.ico", StringComparison.OrdinalIgnoreCase)) {
                     stream = Stream.Null;
                     status = HttpStatusCode.NotFound;
+                } else if (TryServeIconResourceUrl(newUri, out stream)) {
+                    status = HttpStatusCode.OK;
                 } else if (!_dreamResource.EnsureCacheFile(newUri.AbsolutePath)) {
                     stream = Stream.Null;
                     status = HttpStatusCode.NotFound;
                 } else {
                     try {
-                        stream = _resourceManager.UserData.OpenRead(
-                            _dreamResource.GetCacheFilePath(newUri.AbsolutePath));
+                        stream = _resourceManager.UserData.Open(
+                            _dreamResource.GetCacheFilePath(newUri.AbsolutePath),
+                            FileMode.Open,
+                            FileAccess.Read,
+                            FileShare.ReadWrite | FileShare.Delete);
                         status = HttpStatusCode.OK;
                     } catch (FileNotFoundException) {
                         stream = Stream.Null;
@@ -329,7 +703,9 @@ internal sealed partial class ControlBrowser : InterfaceControl {
                     }
                 }
 
-                var mimeType = FileExtensionMimeTypes.GetValueOrDefault(path.Extension, "application/octet-stream");
+                var mimeType = TryParseResourceRef(newUri.AbsolutePath, out _) && newUri.Query != string.Empty
+                    ? "image/png"
+                    : FileExtensionMimeTypes.GetValueOrDefault(path.Extension, "application/octet-stream");
                 if (status == HttpStatusCode.OK && mimeType == "text/html")
                     stream = AddBrowserShims(stream);
 
@@ -339,6 +715,82 @@ internal sealed partial class ControlBrowser : InterfaceControl {
             _sawmill.Error($"Exception in RequestHandler: {e}");
             context.DoCancel();
         }
+    }
+
+    private bool TryServeIconResourceUrl(Uri uri, out Stream stream) {
+        stream = Stream.Null;
+
+        if (uri.Query == string.Empty || !TryParseResourceRef(uri.AbsolutePath, out var resourceId))
+            return false;
+
+        DMIResource? dmi = null;
+        TaskCompletionSource loadedResource = new();
+
+        _dreamResource.LoadResourceAsync<DMIResource>(resourceId, resource => {
+            dmi = resource;
+            loadedResource.SetResult();
+        });
+
+        if (!loadedResource.Task.Wait(TimeSpan.FromSeconds(5))) {
+            _sawmill.Error($"Timed out loading icon resource {uri.AbsolutePath} for browser image {uri}");
+            return false;
+        }
+
+        var queryParams = HttpUtility.ParseQueryString(uri.Query);
+        var state = queryParams.Get("state");
+        var direction = ParseIconDirection(queryParams.Get("dir"));
+        var frame = ParseIconFrame(queryParams.Get("frame"));
+
+        if (dmi == null) {
+            _sawmill.Error($"Browser icon resource {uri.AbsolutePath} resolved to null for {uri}");
+            return false;
+        }
+
+        var png = dmi.GetStateAsPng(state, direction, frame);
+        if (png == null) {
+            _sawmill.Error($"Browser icon resource {uri.AbsolutePath} could not render state=\"{state}\" dir={direction} frame={frame + 1} for {uri}. Known states: {dmi.DescribeStatesForLog()}");
+            return false;
+        }
+
+        _sawmill.Debug($"Served browser icon resource {uri.AbsolutePath} state=\"{state}\" dir={direction} frame={frame + 1} length={png.Length}");
+
+        stream = new MemoryStream(png);
+        return true;
+    }
+
+    private static bool TryParseResourceRef(string path, out int resourceId) {
+        resourceId = 0;
+        var resourceRef = Uri.UnescapeDataString(path).TrimStart('/');
+
+        if (!resourceRef.StartsWith('[') || !resourceRef.EndsWith(']'))
+            return false;
+
+        var refText = resourceRef[1..^1];
+        if (!refText.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ||
+            !uint.TryParse(refText[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var refValue))
+            return false;
+
+        var refType = refValue & RefTypeMask;
+        if (refType is not (DreamResourceIconRefType or DreamResourceRefType))
+            return false;
+
+        resourceId = (int)(refValue & RefIdMask);
+        return true;
+    }
+
+    private static AtomDirection ParseIconDirection(string? direction) {
+        if (!byte.TryParse(direction, NumberStyles.Integer, CultureInfo.InvariantCulture, out var directionValue))
+            return AtomDirection.South;
+
+        return (AtomDirection)directionValue;
+    }
+
+    private static int ParseIconFrame(string? frame) {
+        if (!int.TryParse(frame, NumberStyles.Integer, CultureInfo.InvariantCulture, out var frameValue))
+            return 0;
+
+        // BYOND icon URL helpers use 1-based frame numbers.
+        return Math.Max(frameValue - 1, 0);
     }
 
     /// <summary>

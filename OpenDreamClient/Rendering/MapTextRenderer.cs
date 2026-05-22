@@ -1,4 +1,5 @@
 using System.Diagnostics.Contracts;
+using System.Globalization;
 using System.Text;
 using OpenDreamClient.Interface.Html;
 using OpenDreamShared.Dream;
@@ -21,6 +22,13 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
 
     private readonly Color _defaultColor = Color.White;
 
+    private readonly record struct TextOutline(Color Color, int Size);
+
+    private sealed class MapTextContext {
+        public readonly MarkupDrawingContext Drawing = new();
+        public readonly Stack<TextOutline?> Outline = new();
+    }
+
     private enum TextAlignment {
         Left,
         Center,
@@ -39,9 +47,7 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
             var alignment = GetTextAlignment(message);
             var lineWidths = GetLineWidths(message, lineBreaks);
             var lineHeight = _defaultFont.GetLineHeight(Scale);
-            var context = new MarkupDrawingContext();
-            context.Color.Push(_defaultColor);
-            context.Font.Push(_defaultFont);
+            var context = CreateContext();
 
             var currentLine = 0;
             var baseLine = new Vector2(GetAlignedX(texture.Size.X, lineWidths, currentLine, alignment), height - lineHeight);
@@ -50,10 +56,11 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
 
             foreach (var node in message) {
                 var text = ProcessNode(node, context);
-                if (!context.Color.TryPeek(out var color))
+                if (!context.Drawing.Color.TryPeek(out var color))
                     color = _defaultColor;
-                if (!context.Font.TryPeek(out var font))
+                if (!context.Drawing.Font.TryPeek(out var font))
                     font = _defaultFont;
+                context.Outline.TryPeek(out var outline);
 
                 foreach (var rune in text.EnumerateRunes()) {
                     if (lineBreakIndex < lineBreaks.Count && lineBreaks[lineBreakIndex] == globalBreakCounter) {
@@ -66,6 +73,17 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
                     Vector2 mod = new Vector2(0);
                     if (metric.HasValue)
                         mod.Y += metric.Value.BearingY - (metric.Value.Height - metric.Value.BearingY);
+
+                    if (outline is { } textOutline) {
+                        for (var y = -textOutline.Size; y <= textOutline.Size; y++) {
+                            for (var x = -textOutline.Size; x <= textOutline.Size; x++) {
+                                if (x == 0 && y == 0)
+                                    continue;
+
+                                font.DrawChar(handle, rune, baseLine + mod + new Vector2(x, y), Scale, textOutline.Color);
+                            }
+                        }
+                    }
 
                     var advance = font.DrawChar(handle, rune, baseLine + mod, Scale, color);
                     baseLine.X += advance;
@@ -115,9 +133,7 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
     }
 
     private List<float> GetLineWidths(FormattedMessage message, IReadOnlyList<int> lineBreaks) {
-        var context = new MarkupDrawingContext();
-        context.Color.Push(_defaultColor);
-        context.Font.Push(_defaultFont);
+        var context = CreateContext();
 
         var result = new List<float> {0};
         var lineBreakIndex = 0;
@@ -125,7 +141,7 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
 
         foreach (var node in message) {
             var text = ProcessNode(node, context);
-            if (!context.Font.TryPeek(out var font))
+            if (!context.Drawing.Font.TryPeek(out var font))
                 font = _defaultFont;
 
             foreach (var rune in text.EnumerateRunes()) {
@@ -144,22 +160,112 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
         return result;
     }
 
-    private string ProcessNode(MarkupNode node, MarkupDrawingContext context) {
+    private MapTextContext CreateContext() {
+        var context = new MapTextContext();
+        context.Drawing.Color.Push(_defaultColor);
+        context.Drawing.Font.Push(_defaultFont);
+        context.Outline.Push(null);
+        return context;
+    }
+
+    private string ProcessNode(MarkupNode node, MapTextContext context) {
         // If a nodes name is null it's a text node.
         if (node.Name == null)
             return node.Value.StringValue ?? "";
+
+        if (node.Name is "span" or "div") {
+            if (!node.Closing) {
+                PushStyledContext(node, context);
+                return "";
+            }
+
+            context.Drawing.Font.Pop();
+            context.Drawing.Color.Pop();
+            context.Outline.Pop();
+            return "";
+        }
 
         //Skip the node if there is no markup tag for it.
         if (!tagManager.TryGetMarkupTagHandler(node.Name, null, out var tag))
             return "";
 
         if (!node.Closing) {
-            tag.PushDrawContext(node, context);
+            tag.PushDrawContext(node, context.Drawing);
             return tag.TextBefore(node);
         }
 
-        tag.PopDrawContext(node, context);
+        tag.PopDrawContext(node, context.Drawing);
         return tag.TextAfter(node);
+    }
+
+    private void PushStyledContext(MarkupNode node, MapTextContext context) {
+        var color = context.Drawing.Color.Peek();
+        var font = context.Drawing.Font.Peek();
+        var outline = context.Outline.Peek();
+
+        if (node.Attributes.TryGetValue("style", out var styleParameter) &&
+            styleParameter.StringValue is { } style) {
+            foreach (var declaration in style.Split(';', StringSplitOptions.RemoveEmptyEntries)) {
+                var parts = declaration.Split(':', 2, StringSplitOptions.TrimEntries);
+                if (parts.Length != 2)
+                    continue;
+
+                switch (parts[0].ToLowerInvariant()) {
+                    case "color":
+                        color = ParseColor(parts[1]) ?? color;
+                        break;
+                    case "font-size":
+                        font = ParseFontSize(parts[1]) is { } fontSize
+                            ? new VectorFont(resourceCache.GetResource<FontResource>("/Fonts/NotoSans-Regular.ttf"), fontSize)
+                            : font;
+                        break;
+                    case "-dm-text-outline":
+                        outline = ParseTextOutline(parts[1]) ?? outline;
+                        break;
+                }
+            }
+        }
+
+        context.Drawing.Font.Push(font);
+        context.Drawing.Color.Push(color);
+        context.Outline.Push(outline);
+    }
+
+    private static Color? ParseColor(string value) {
+        value = value.Trim();
+        if (Color.TryFromName(value, out var color))
+            return color;
+
+        return Color.TryFromHex(value);
+    }
+
+    private static int? ParseFontSize(string value) {
+        value = value.Trim().ToLowerInvariant();
+        if (value.EndsWith("pt") || value.EndsWith("px"))
+            value = value[..^2];
+
+        return float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var result)
+            ? Math.Max(1, (int)MathF.Round(result))
+            : null;
+    }
+
+    private static TextOutline? ParseTextOutline(string value) {
+        var parts = value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+            return null;
+
+        var sizePart = parts[0].ToLowerInvariant();
+        if (sizePart.EndsWith("px"))
+            sizePart = sizePart[..^2];
+
+        if (!int.TryParse(sizePart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var size) || size <= 0)
+            return null;
+
+        var color = parts.Length > 1
+            ? ParseColor(string.Join(' ', parts[1..])) ?? Color.Black
+            : Color.Black;
+
+        return new(color, size);
     }
 
     private (int, List<int>) ProcessWordWrap(FormattedMessage message, float maxSizeX) {
@@ -172,9 +278,7 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
 
         int? breakLine;
         var wordWrap = new WordWrap(maxSizeX);
-        var context = new MarkupDrawingContext();
-        context.Font.Push(_defaultFont);
-        context.Color.Push(_defaultColor);
+        var context = CreateContext();
 
         // Go over every node.
         // Nodes can change the markup drawing context and return additional text.
@@ -182,7 +286,7 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
         foreach (var node in message) {
             var text = ProcessNode(node, context);
 
-            if (!context.Font.TryPeek(out var font))
+            if (!context.Drawing.Font.TryPeek(out var font))
                 font = _defaultFont;
 
             // And go over every character.
@@ -221,7 +325,7 @@ public sealed class MapTextRenderer(IResourceCache resourceCache, MarkupTagManag
         void CheckLineBreak(int? line) {
             if (line is { } l) {
                 lineBreaks.Add(l);
-                if (!context.Font.TryPeek(out var font))
+                if (!context.Drawing.Font.TryPeek(out var font))
                     font = _defaultFont;
 
                 height += font.GetLineHeight(Scale);

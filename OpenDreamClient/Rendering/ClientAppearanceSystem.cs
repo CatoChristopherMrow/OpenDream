@@ -39,12 +39,17 @@ internal sealed partial class ClientAppearanceSystem : SharedAppearanceSystem {
             var frames = Frames;
             if (_animationFrame >= frames.Length)
                 return -1;
-            if (gameTiming.CurTime.Ticks >= _nextFrame) {
+
+            while (gameTiming.CurTime.Ticks >= _nextFrame) {
                 _animationFrame++;
                 if (_animationFrame >= frames.Length)
                     return -1;
 
-                _nextFrame += frames[_animationFrame].Delay.Ticks;
+                var delayTicks = frames[_animationFrame].Delay.Ticks;
+                if (delayTicks <= 0)
+                    return _animationFrame;
+
+                _nextFrame += delayTicks;
             }
 
             return _animationFrame;

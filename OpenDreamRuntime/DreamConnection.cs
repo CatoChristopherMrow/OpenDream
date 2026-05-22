@@ -480,7 +480,6 @@ public sealed partial class DreamConnection {
             return;
 
         filename = NormalizeBrowseRscFilename(filename);
-
         var msg = new MsgBrowseResource() {
             Filename = filename,
             DataHash = CryptoGenericHashBlake2B.Hash(32, resource.ResourceData!, ReadOnlySpan<byte>.Empty)
@@ -511,6 +510,11 @@ public sealed partial class DreamConnection {
         filename = NormalizeBrowseRscFilename(filename);
 
         if(_permittedBrowseRscFiles.TryGetValue(filename, out var dreamResource)) {
+            SendBrowseResourceResponse(filename, dreamResource);
+        } else if (_resourceManager.TryLoadResource(filename, out dreamResource) && dreamResource.ResourceData != null) {
+            // BYOND clients can use resource refs such as [0xc000001] directly
+            // in browser HTML. Treat them as an implicit browse_rsc permission.
+            _permittedBrowseRscFiles[filename] = dreamResource;
             SendBrowseResourceResponse(filename, dreamResource);
         } else {
             _pendingBrowseRscRequests.Add(filename);

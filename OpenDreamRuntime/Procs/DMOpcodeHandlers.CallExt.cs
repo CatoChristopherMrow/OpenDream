@@ -95,6 +95,12 @@ internal static partial class DMOpcodeHandlers {
             return ProcStatus.Continue;
         }
 
+        if (procName == "file_write" && TryWriteTextFile(state, arguments, out var fileWriteResult)) {
+            state.Push(fileWriteResult);
+            arguments.Dispose();
+            return ProcStatus.Continue;
+        }
+
         var entryPoint = DllHelper.ResolveDllTarget(state.Proc.DreamResourceManager, dllName, procName);
 
         Span<nint> argV = stackalloc nint[arguments.Count];
@@ -153,6 +159,20 @@ internal static partial class DMOpcodeHandlers {
         result = state.Proc.DreamResourceManager.LoadResource(path).ReadAsString() is { } text
             ? new DreamValue(text)
             : DreamValue.Null;
+        return true;
+    }
+
+    private static bool TryWriteTextFile(DMProcState state, DreamProcArguments arguments, out DreamValue result) {
+        result = DreamValue.Null;
+
+        if (arguments.Count != 2)
+            return false;
+
+        if (!arguments.GetArgument(1).TryGetValueAsString(out var path))
+            return false;
+
+        var text = arguments.GetArgument(0).Stringify();
+        result = new DreamValue(state.Proc.DreamResourceManager.SaveTextToFile(path, text) ? "1" : "0");
         return true;
     }
 

@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using OpenDreamShared.Dream;
 using OpenDreamShared.Resources;
@@ -113,6 +114,39 @@ public sealed class DMIResource : DreamResource {
         var hotspot = state.Hotspot ?? (0, stateImage.Height - 1); // Default to the top-left
         var cursor = clyde.CreateCursor(stateImage, hotspot);
         return cursor;
+    }
+
+    public byte[]? GetStateAsPng(string? stateName, AtomDirection direction = AtomDirection.South, int frame = 0) {
+        using var dmiStream = new MemoryStream(Data);
+        var description = DMIParser.ParseDMI(dmiStream);
+
+        dmiStream.Seek(0, SeekOrigin.Begin);
+
+        using var image = Image.Load<Rgba32>(dmiStream);
+        var state = description.GetStateOrDefault(stateName);
+        if (state == null)
+            return null;
+
+        var frames = state.GetFrames(direction);
+        if (frames.Length == 0)
+            return null;
+
+        frame = Math.Clamp(frame, 0, frames.Length - 1);
+        var dmiFrame = frames[frame];
+        using var stateImage = image.Clone(clone => {
+            clone.Crop(new Rectangle(dmiFrame.X, dmiFrame.Y, description.Width, description.Height));
+        });
+
+        using var output = new MemoryStream();
+        stateImage.SaveAsPng(output);
+        return output.ToArray();
+    }
+
+    public string DescribeStatesForLog(int maxStates = 12) {
+        var stateNames = Description.States.Keys.Take(maxStates);
+        var suffix = Description.States.Count > maxStates ? ", ..." : string.Empty;
+
+        return string.Join(", ", stateNames) + suffix;
     }
 
     public struct State {

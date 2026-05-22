@@ -559,20 +559,27 @@ internal static class DreamProcNativeRoot {
     public static DreamValue NativeProc_fcopy_rsc(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
         var arg1 = bundle.GetArgument(0, "File");
 
-        if (bundle.ResourceManager.TryLoadIcon(arg1, out var icon))
-            return new(icon);
+        if (bundle.ResourceManager.TryLoadIcon(arg1, out var icon)) {
+            if (icon.ResourceData == null)
+                return DreamValue.Null;
 
-        string? filePath;
-        if (arg1.TryGetValueAsDreamResource(out var arg1Rsc)) {
-            filePath = arg1Rsc.ResourcePath;
-        } else {
-            arg1.TryGetValueAsString(out filePath);
+            return new(bundle.ResourceManager.CreateIconResource(icon.ResourceData.ToArray(), icon.Texture.Clone(), icon.DMI));
         }
 
-        if (filePath == null)
+        DreamResource? resource;
+        if (arg1.TryGetValueAsDreamResource(out var arg1Rsc)) {
+            resource = arg1Rsc;
+        } else {
+            if (!arg1.TryGetValueAsString(out var filePath))
+                return DreamValue.Null;
+
+            resource = bundle.ResourceManager.LoadResource(filePath);
+        }
+
+        if (resource.ResourceData == null)
             return DreamValue.Null;
 
-        return new DreamValue(bundle.ResourceManager.LoadResource(filePath));
+        return new DreamValue(bundle.ResourceManager.CreateResource(resource.ResourceData.ToArray()));
     }
 
     [DreamProc("load_resource")]

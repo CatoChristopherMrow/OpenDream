@@ -124,14 +124,26 @@ public sealed partial class ServerAppearanceSystem : SharedAppearanceSystem {
 
     public ImmutableAppearance AddAppearance(ImmutableAppearance appearance, bool registerAppearance = true) {
         lock (_lock) {
-            if(_appearanceLookup.TryGetValue(new(appearance), out var weakReference) && weakReference.TryGetTarget(out var originalImmutable)) {
-                return originalImmutable;
-            } else if (registerAppearance) {
-                RegisterAppearance(appearance);
-                return appearance;
-            } else {
-                return appearance;
-            }
+            return AddAppearanceLocked(appearance, registerAppearance);
+        }
+    }
+
+    private ImmutableAppearance AddAppearanceLocked(ImmutableAppearance appearance, bool registerAppearance) {
+        for (var i = 0; i < appearance.Overlays.Length; i++) {
+            appearance.Overlays[i] = AddAppearanceLocked(appearance.Overlays[i], registerAppearance);
+        }
+
+        for (var i = 0; i < appearance.Underlays.Length; i++) {
+            appearance.Underlays[i] = AddAppearanceLocked(appearance.Underlays[i], registerAppearance);
+        }
+
+        if(_appearanceLookup.TryGetValue(new(appearance), out var weakReference) && weakReference.TryGetTarget(out var originalImmutable)) {
+            return originalImmutable;
+        } else if (registerAppearance) {
+            RegisterAppearance(appearance);
+            return appearance;
+        } else {
+            return appearance;
         }
     }
 

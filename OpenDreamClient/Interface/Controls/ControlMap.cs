@@ -26,8 +26,10 @@ public sealed partial class ControlMap(ControlDescriptor controlDescriptor, Cont
     protected override void UpdateElementDescriptor() {
         base.UpdateElementDescriptor();
 
-        // Don't attempt to render any non-main viewports
-        Viewport.Visible = MapDescriptor.IsDefault.Value;
+        Viewport.MapControlId = MapDescriptor.IsDefault.Value ? null : Id.Value;
+        Viewport.MapControlClipOffset = MapDescriptor.OpenDreamClipOffset.Vector;
+        Viewport.MapControlFullSize = MapDescriptor.OpenDreamFullSize.Vector;
+        Viewport.Visible = MapDescriptor.IsVisible.Value;
 
         Viewport.StretchMode = MapDescriptor.ZoomMode.Value switch {
             "blur" => ScalingViewportStretchMode.Bilinear,

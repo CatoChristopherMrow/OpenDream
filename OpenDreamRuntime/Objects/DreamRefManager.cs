@@ -111,7 +111,7 @@ public sealed partial class DreamRefManager {
         if (value.TryGetValueAsType(out var type))
             return (uint)RefType.DreamType | (uint)type.Id;
         if (value.TryGetValueAsDreamResource(out var refRsc))
-            return (uint)RefType.DreamResource | (uint)refRsc.Id;
+            return (uint)(refRsc is IconResource ? RefType.DreamResourceIcon : RefType.DreamResource) | (uint)refRsc.Id;
         if (value.TryGetValueAsProc(out var proc))
             return (uint)RefType.Proc | (uint)proc.Id;
 

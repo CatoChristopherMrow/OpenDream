@@ -112,7 +112,9 @@ internal static partial class DreamProcNativeHelpers {
             int leftColumnX = centerPos.X - d;
             int startingLeftColumnY = centerPos.Y - d;
             for (int i = 0; i < sideLength; ++i) {
-                yield return tiles[leftColumnX, startingLeftColumnY + i];
+                var y = startingLeftColumnY + i;
+                if (leftColumnX >= 0 && leftColumnX < width && y >= 0 && y < height)
+                    yield return tiles[leftColumnX, y];
             }
 
             //The criss-cross-apple-sauce
@@ -120,17 +122,24 @@ internal static partial class DreamProcNativeHelpers {
             int startingCrossX = centerPos.X - d + 1;
             for(int i = 0; i < crissCrossLength; ++i) {
                 //the criss
-                yield return tiles[startingCrossX + i, centerPos.Y - d];
+                var x = startingCrossX + i;
+                var crissY = centerPos.Y - d;
+                if (x >= 0 && x < width && crissY >= 0 && crissY < height)
+                    yield return tiles[x, crissY];
 
                 //the cross
-                yield return tiles[startingCrossX + i, centerPos.Y + d];
+                var crossY = centerPos.Y + d;
+                if (x >= 0 && x < width && crossY >= 0 && crossY < height)
+                    yield return tiles[x, crossY];
             }
 
             //The right column
             int rightColumnX = centerPos.X + d;
             int startingRightColumnY = centerPos.Y - d;
             for (int i = 0; i < sideLength; ++i) {
-                yield return tiles[rightColumnX, startingRightColumnY + i];
+                var y = startingRightColumnY + i;
+                if (rightColumnX >= 0 && rightColumnX < width && y >= 0 && y < height)
+                    yield return tiles[rightColumnX, y];
             }
         }
     }

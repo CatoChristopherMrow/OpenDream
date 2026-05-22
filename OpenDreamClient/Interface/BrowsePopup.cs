@@ -37,6 +37,7 @@ internal sealed class BrowsePopup {
 
         _window = new ChromelessBrowseWindow(name, size, WindowElement.UIElement);
         _window.OnClose += OnWindowClosed;
+        _window.OnResized += OnWindowResized;
 
         Browser = (ControlBrowser)WindowElement.ChildControls[0];
     }
@@ -104,8 +105,10 @@ internal sealed class BrowsePopup {
     }
 
     private void SetSize(Vector2i size) {
+        size = new Vector2i(Math.Max(size.X, 150), Math.Max(size.Y, 50));
         _window.SetSize = size;
-        WindowElement.UIElement.SetSize = size;
+        WindowElement.SetProperty("size", $"{size.X}x{size.Y}", manualWinset: true);
+        Browser.SetProperty("size", $"{size.X}x{size.Y}", manualWinset: true);
         UpdateBrowserGeometry();
     }
 
@@ -119,6 +122,14 @@ internal sealed class BrowsePopup {
 
     private void UpdateBrowserGeometry() {
         Browser.SetGeometryOrigin(_window.GlobalPixelPosition);
+    }
+
+    private void OnWindowResized() {
+        var size = _window.Size;
+        var pixelSize = new Vector2i((int)size.X, (int)size.Y);
+        WindowElement.SetProperty("size", $"{pixelSize.X}x{pixelSize.Y}", manualWinset: true);
+        Browser.SetProperty("size", $"{pixelSize.X}x{pixelSize.Y}", manualWinset: true);
+        UpdateBrowserGeometry();
     }
 
     private Vector2 PixelToParentUiPosition(Vector2i pixelPosition) {
@@ -142,7 +153,7 @@ internal sealed class BrowsePopup {
         public ChromelessBrowseWindow(string name, Vector2i size, Control contents) {
             Name = name;
             SetSize = size;
-            MinSize = new Vector2(160, 120);
+            MinSize = new Vector2(150, 50);
             MouseFilter = MouseFilterMode.Stop;
             Resizable = true;
             AddChild(contents);
@@ -159,7 +170,23 @@ internal sealed class BrowsePopup {
         }
 
         protected override DragMode GetDragModeFor(Vector2 relativeMousePos) {
-            return DragMode.None;
+            const int dragMarginSize = 6;
+
+            if (!Resizable)
+                return DragMode.None;
+
+            var mode = DragMode.None;
+            if (relativeMousePos.Y < dragMarginSize)
+                mode = DragMode.Top;
+            else if (relativeMousePos.Y > Size.Y - dragMarginSize)
+                mode = DragMode.Bottom;
+
+            if (relativeMousePos.X < dragMarginSize)
+                mode |= DragMode.Left;
+            else if (relativeMousePos.X > Size.X - dragMarginSize)
+                mode |= DragMode.Right;
+
+            return mode;
         }
     }
 }
