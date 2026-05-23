@@ -135,9 +135,21 @@ public sealed partial class ControlWindow : InterfaceControl {
         }
 
         _myWindow = (null, window);
+        LetParentControlSizeWindow();
+        UpdateWindowAttributes(_myWindow);
+    }
+
+    public void RegisterAsEmbeddedPane() {
+        if (!WindowDescriptor.IsPane.Value)
+            return;
+
+        LetParentControlSizeWindow();
+        UpdateAnchors();
+    }
+
+    private void LetParentControlSizeWindow() {
         UIElement.SetWidth = float.NaN;
         UIElement.SetHeight = float.NaN;
-        UpdateWindowAttributes(_myWindow);
     }
 
     public void UpdateAnchors() {
@@ -391,16 +403,16 @@ public sealed partial class ControlWindow : InterfaceControl {
     public override void SetProperty(string property, string value, bool manualWinset = false) {
         switch (property) {
             case "size":
-            var size = new DMFPropertySize(value);
-            ControlDescriptor.Size = size;
-            UpdateAnchors();
+                var size = new DMFPropertySize(value);
+                ControlDescriptor.Size = size;
+                UpdateAnchors();
 
-            if (_myWindow.osWindow == null && _myWindow.clydeWindow == null)
-                UIElement.SetSize = size.Vector;
+                if (_myWindow.osWindow == null && _myWindow.clydeWindow == null)
+                    UIElement.SetSize = size.Vector;
 
-            if (_myWindow.osWindow is {ClydeWindow: not null}) {
-                var osSize = new DMFPropertySize(value);
-                var uiScale = _myWindow.osWindow.UIScale;
+                if (_myWindow.osWindow is {ClydeWindow: not null}) {
+                    var osSize = new DMFPropertySize(value);
+                    var uiScale = _myWindow.osWindow.UIScale;
                     osSize.X = (int)(osSize.X * uiScale); // TODO: RT should probably do this itself
                     osSize.Y = (int)(osSize.Y * uiScale);
                     _myWindow.osWindow.ClydeWindow.Size = osSize.Vector;

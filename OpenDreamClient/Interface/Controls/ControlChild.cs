@@ -21,15 +21,14 @@ internal sealed class ControlChild(ControlDescriptor controlDescriptor, ControlW
     protected override void UpdateElementDescriptor() {
         base.UpdateElementDescriptor();
 
-        var newLeftElement = InterfaceManager.Windows.TryGetValue(ChildDescriptor.Left.Value, out var leftWindow)
-            ? leftWindow.UIElement
-            : null;
-        var newRightElement = InterfaceManager.Windows.TryGetValue(ChildDescriptor.Right.Value, out var rightWindow)
-            ? rightWindow.UIElement
-            : null;
+        InterfaceManager.Windows.TryGetValue(ChildDescriptor.Left.Value, out var leftWindow);
+        InterfaceManager.Windows.TryGetValue(ChildDescriptor.Right.Value, out var rightWindow);
 
-        _splitter.Left = newLeftElement;
-        _splitter.Right = newRightElement;
+        leftWindow?.RegisterAsEmbeddedPane();
+        rightWindow?.RegisterAsEmbeddedPane();
+
+        _splitter.Left = leftWindow?.UIElement;
+        _splitter.Right = rightWindow?.UIElement;
         _splitter.Vertical = ChildDescriptor.IsVert.Value;
         _splitter.SplitterPercentage = ChildDescriptor.Splitter.Value / 100f;
         _splitter.DragStyleBoxOverride = new StyleBoxColoredTexture {
