@@ -10,6 +10,18 @@ namespace OpenDreamRuntime.Procs.Native {
         [DreamProcParameter("start", Type = DreamValue.DreamValueTypeFlag.Float | DreamValue.DreamValueTypeFlag.DreamObject)] // BYOND docs say these are uppercase, they're not
         [DreamProcParameter("end", DefaultValue = 0, Type = DreamValue.DreamValueTypeFlag.Float)]
         public static DreamValue NativeProc_Find(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+            return NativeProc_FindImpl(bundle, src);
+        }
+
+        [DreamProc("Find_char")]
+        [DreamProcParameter("haystack", Type = DreamValue.DreamValueTypeFlag.String)]
+        [DreamProcParameter("start", Type = DreamValue.DreamValueTypeFlag.Float | DreamValue.DreamValueTypeFlag.DreamObject)]
+        [DreamProcParameter("end", DefaultValue = 0, Type = DreamValue.DreamValueTypeFlag.Float)]
+        public static DreamValue NativeProc_FindChar(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+            return NativeProc_FindImpl(bundle, src);
+        }
+
+        private static DreamValue NativeProc_FindImpl(NativeProc.Bundle bundle, DreamObject? src) {
             DreamObjectRegex dreamRegex = (DreamObjectRegex)src!;
             DreamValue haystack = bundle.GetArgument(0, "haystack");
 
@@ -18,12 +30,12 @@ namespace OpenDreamRuntime.Procs.Native {
             }
 
             int next = GetNext(src!, bundle.GetArgument(1, "start"), dreamRegex.IsGlobal, haystackString);
-            int end = bundle.GetArgument(2, "end").GetValueAsInteger();
+            int end = bundle.GetArgument(2, "end").TryGetValueAsInteger(out var endValue) ? endValue : 0;
 
             dreamRegex.SetVariable("text", haystack);
 
             if (end == 0) end = haystackString.Length;
-            if (haystackString.Length <= next - 1) {
+            if (haystackString.Length < next - 1) {
                 if (dreamRegex.IsGlobal) {
                     dreamRegex.SetVariable("next", DreamValue.Null);
                 }
@@ -64,13 +76,13 @@ namespace OpenDreamRuntime.Procs.Native {
                     var groups = match.Groups;
                     var args = new DreamValue[groups.Count];
                     for (int i = 0; i < groups.Count; i++) {
-                        args[i] = new DreamValue(groups[i].Value);
+                        args[i] = i == 0 ? new DreamValue(groups[i].Value) : DreamObjectRegex.CaptureGroupToDreamValue(groups[i]);
                     }
 
                     // TODO: src is the regex string
                     // TODO: We need to add this to our current thread instead of spawning a new one
                     // TODO: This call needs to immediately die upon sleeping
-                    using var result = proc.Spawn(null, new(args));
+                    using var result = proc.Spawn(regexInstance, new DreamProcArguments(args));
 
                     var replacement = result.Stringify();
                     currentHaystack = regex.Regex.Replace(currentHaystack, replacement, 1, currentStart);
@@ -112,12 +124,25 @@ namespace OpenDreamRuntime.Procs.Native {
         [DreamProcParameter("start", DefaultValue = 1, Type = DreamValue.DreamValueTypeFlag.Float)] // BYOND docs say these are uppercase, they're not
         [DreamProcParameter("end", DefaultValue = 0, Type = DreamValue.DreamValueTypeFlag.Float)]
         public static DreamValue NativeProc_Replace(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+            return NativeProc_ReplaceImpl(bundle, src);
+        }
+
+        [DreamProc("Replace_char")]
+        [DreamProcParameter("haystack", Type = DreamValue.DreamValueTypeFlag.String)]
+        [DreamProcParameter("replacement", Type = DreamValue.DreamValueTypeFlag.String | DreamValue.DreamValueTypeFlag.DreamProc)]
+        [DreamProcParameter("start", DefaultValue = 1, Type = DreamValue.DreamValueTypeFlag.Float)]
+        [DreamProcParameter("end", DefaultValue = 0, Type = DreamValue.DreamValueTypeFlag.Float)]
+        public static DreamValue NativeProc_ReplaceChar(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+            return NativeProc_ReplaceImpl(bundle, src);
+        }
+
+        private static DreamValue NativeProc_ReplaceImpl(NativeProc.Bundle bundle, DreamObject? src) {
             DreamValue haystack = bundle.GetArgument(0, "haystack");
             DreamValue replacement = bundle.GetArgument(1, "replacement");
-            int start = bundle.GetArgument(2, "start").GetValueAsInteger();
-            int end = bundle.GetArgument(3, "end").GetValueAsInteger();
+            int start = bundle.GetArgument(2, "start").TryGetValueAsInteger(out var startValue) ? startValue : 1;
+            int end = bundle.GetArgument(3, "end").TryGetValueAsInteger(out var endValue) ? endValue : 0;
 
-            return RegexReplace(src, haystack, replacement, start, end);
+            return RegexReplace(src!, haystack, replacement, start, end);
         }
 
         private static int GetNext(DreamObject regexInstance, DreamValue startParam, bool isGlobal, string haystackString) {
@@ -126,12 +151,26 @@ namespace OpenDreamRuntime.Procs.Native {
                 if (isGlobal && textVar.TryGetValueAsString(out string? lastHaystack) && lastHaystack == haystackString) {
                     using var nextVar = regexInstance.GetVariable("next");
 
-                    return (!nextVar.IsNull) ? nextVar.GetValueAsInteger() : 1;
+                    return nextVar.TryGetValueAsInteger(out var next) ? next : 1;
                 } else {
                     return 1;
                 }
             } else {
-                return startParam.GetValueAsInteger();
+                if (!startParam.TryGetValueAsInteger(out var start))
+                    return 1;
+
+                using var textVar = regexInstance.GetVariable("text");
+                if (isGlobal && textVar.TryGetValueAsString(out string? lastHaystack) && lastHaystack == haystackString) {
+                    using var indexVar = regexInstance.GetVariable("index");
+                    using var nextVar = regexInstance.GetVariable("next");
+
+                    if (indexVar.TryGetValueAsInteger(out var index) && index == start &&
+                        nextVar.TryGetValueAsInteger(out var next)) {
+                        return next;
+                    }
+                }
+
+                return start;
             }
         }
     }

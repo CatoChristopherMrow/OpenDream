@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using DMCompiler.Bytecode;
 using DMCompiler.DM.Expressions;
 using DMCompiler.Json;
@@ -140,6 +141,21 @@ internal sealed class DMObject(DMCompiler compiler, int id, DreamPath path, DMOb
                || (Parent?.IsRuntimeInitialized(varName) ?? false);
     }
 
+    public bool TryGetRuntimeInitializer(string varName, [NotNullWhen(true)] out DMExpression? initializer) {
+        foreach (var (name, assignment) in InitializationProcAssignments) {
+            if (name == varName) {
+                initializer = assignment.Right;
+                return true;
+            }
+        }
+
+        if (Parent is not null)
+            return Parent.TryGetRuntimeInitializer(varName, out initializer);
+
+        initializer = null;
+        return false;
+    }
+
     /// <summary>
     /// Recursively searches for a global/static with the given name.
     /// </summary>
@@ -159,6 +175,8 @@ internal sealed class DMObject(DMCompiler compiler, int id, DreamPath path, DMOb
     }
 
     public void CreateInitializationProc() {
+        AddRuntimeAssignmentsForInheritedInitializers();
+
         if (InitializationProcAssignments.Count <= 0 || InitializationProc != null)
             return;
 
@@ -170,6 +188,20 @@ internal sealed class DMObject(DMCompiler compiler, int id, DreamPath path, DMOb
             init.DebugSource(assignment.Assignment.Location);
             assignment.Assignment.EmitPushValue(new(compiler, this, init));
             init.Pop();
+        }
+    }
+
+    private void AddRuntimeAssignmentsForInheritedInitializers() {
+        foreach (var (name, variable) in VariableOverrides) {
+            if (InitializationProcAssignments.Any(v => v.Name == name) || Parent?.IsRuntimeInitialized(name) != true)
+                continue;
+
+            if (variable.Value is not { } value)
+                continue;
+
+            var field = new Field(value.Location, variable, variable.ValType);
+            var assign = new Assignment(value.Location, field, value);
+            InitializationProcAssignments.Add((name, assign));
         }
     }
 

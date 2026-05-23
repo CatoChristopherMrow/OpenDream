@@ -95,21 +95,33 @@ internal static class DreamProcNativeDatabaseQuery {
         return new DreamValue(query.RowsAffected());
     }
 
-    [DreamProc("NextRow")]
-    public static DreamValue NativeProc_NextRow(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+    [DreamProc("Reset")]
+    public static DreamValue NativeProc_Reset(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
         var query = (DreamObjectDatabaseQuery)src!;
 
-        query.NextRow();
+        query.ResetReader();
 
         return DreamValue.Null;
     }
 
-    [DreamProc("GetColumn")]
-    [DreamProcParameter("column", Type = DreamValueTypeFlag.Float)]
-    public static DreamValue NativeProc_GetColumn(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+    [DreamProc("NextRow")]
+    public static DreamValue NativeProc_NextRow(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
         var query = (DreamObjectDatabaseQuery)src!;
 
-        if (!bundle.GetArgument(0, "column").TryGetValueAsInteger(out var column)) {
+        return new DreamValue(query.NextRow() ? 1 : 0);
+    }
+
+    [DreamProc("GetColumn")]
+    [DreamProcParameter("column")]
+    public static DreamValue NativeProc_GetColumn(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        var query = (DreamObjectDatabaseQuery)src!;
+        var argument = bundle.GetArgument(0, "column");
+
+        if (argument.TryGetValueAsString(out var columnName)) {
+            return query.TryGetColumn(columnName, out var namedValue) ? namedValue : DreamValue.Null;
+        }
+
+        if (!argument.TryGetValueAsInteger(out var column)) {
             return DreamValue.Null;
         }
 

@@ -290,7 +290,8 @@ public enum DreamProcOpcode : byte {
     CreateListNResources = 0x92,
     [OpcodeMetadata(0, OpcodeArgType.String, OpcodeArgType.Label)]
     SwitchOnString = 0x93,
-    //0x94
+    [OpcodeMetadata(-1)]
+    Compare = 0x94,
     [OpcodeMetadata(0, OpcodeArgType.TypeId)]
     IsTypeDirect = 0x95,
     [OpcodeMetadata(0, OpcodeArgType.Reference)]
@@ -307,6 +308,8 @@ public enum DreamProcOpcode : byte {
     NPushFloatAssign = 0x9B,
     [OpcodeMetadata(0, OpcodeArgType.ArgType, OpcodeArgType.StackDelta)]
     Animate = 0x9C,
+    [OpcodeMetadata(1, OpcodeArgType.TypeId, OpcodeArgType.String)]
+    PushModifiedType = 0x9D,
 }
 // ReSharper restore MissingBlankLines
 

@@ -30,7 +30,8 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
         DreamObject   = 4,
         DreamType     = 5,
         DreamProc     = 6,
-        Appearance    = 7
+        Appearance    = 7,
+        ModifiedDreamType = 8
         // @formatter:on
     }
 
@@ -43,7 +44,8 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
         DreamObject   = 1 << (DreamValueType.DreamObject   - 1),
         DreamType     = 1 << (DreamValueType.DreamType     - 1),
         DreamProc     = 1 << (DreamValueType.DreamProc     - 1),
-        Appearance    = 1 << (DreamValueType.Appearance    - 1)
+        Appearance    = 1 << (DreamValueType.Appearance    - 1),
+        ModifiedDreamType = 1 << (DreamValueType.ModifiedDreamType - 1)
         // @formatter:on
     }
 
@@ -111,6 +113,11 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
         _refValue = value;
     }
 
+    public DreamValue(DreamModifiedType value) {
+        Type = DreamValueType.ModifiedDreamType;
+        _refValue = value;
+    }
+
     public DreamValue(DreamProc value) {
         Type = DreamValueType.DreamProc;
         _refValue = value;
@@ -124,6 +131,11 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
     public bool IsNull {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => Type == DreamValueType.DreamObject && (_refValue == null || Unsafe.As<DreamObject>(_refValue).Deleted);
+    }
+
+    public bool IsDeletedDreamObject {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => Type == DreamValueType.DreamObject && _refValue is DreamObject { Deleted: true };
     }
 
     public readonly override string ToString() {
@@ -281,6 +293,13 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
         return dreamObject;
     }
 
+    public DreamObject? GetRawDreamObject() {
+        if (Type != DreamValueType.DreamObject)
+            ThrowInvalidCastDreamObject();
+
+        return Unsafe.As<DreamObject?>(_refValue);
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void ThrowInvalidCastDreamObject() {
         throw new InvalidCastException($"Value {this} was not the expected type of DreamObject");
@@ -292,7 +311,7 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
     }
 
     public readonly bool TryGetValueAsDreamObject<T>([NotNullWhen(true)] out T? dreamObject) where T : DreamObject {
-        if (_refValue is T dreamObjectValue) {
+        if (_refValue is T { Deleted: false } dreamObjectValue) {
             dreamObject = dreamObjectValue;
             return true;
         }
@@ -343,6 +362,9 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
             type = Unsafe.As<TreeEntry>(_refValue)!;
 
             return true;
+        } else if (Type == DreamValueType.ModifiedDreamType) {
+            type = Unsafe.As<DreamModifiedType>(_refValue)!.Type;
+            return true;
         }
 
         type = null;
@@ -350,10 +372,23 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
     }
 
     public TreeEntry MustGetValueAsType() {
+        if (Type == DreamValueType.ModifiedDreamType)
+            return Unsafe.As<DreamModifiedType>(_refValue)!.Type;
+
         if (Type != DreamValueType.DreamType) // Could be a proc or verb stub, they hold they same value
             throw new InvalidCastException($"Value {this} was not the expected type of DreamPath");
 
         return Unsafe.As<TreeEntry>(_refValue)!;
+    }
+
+    public readonly bool TryGetValueAsModifiedType([NotNullWhen(true)] out DreamModifiedType? type) {
+        if (Type == DreamValueType.ModifiedDreamType) {
+            type = Unsafe.As<DreamModifiedType>(_refValue)!;
+            return true;
+        }
+
+        type = null;
+        return false;
     }
 
     public readonly bool TryGetValueAsProc([NotNullWhen(true)] out DreamProc? proc) {
@@ -409,6 +444,7 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
             case DreamValueType.DreamType:
             case DreamValueType.DreamProc:
             case DreamValueType.Appearance:
+            case DreamValueType.ModifiedDreamType:
                 return true;
             default:
                 return false;
@@ -445,6 +481,8 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
                 return rsc.ResourcePath ?? string.Empty;
             case DreamValueType.DreamType:
                 return MustGetValueAsType().Path;
+            case DreamValueType.ModifiedDreamType:
+                return MustGetValueAsType().Path;
             case DreamValueType.DreamProc:
                 var proc = MustGetValueAsProc();
 
@@ -470,15 +508,22 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
         switch (Type) {
             case DreamValueType.Float:
                 return _floatValue.Equals(other._floatValue);
+            case DreamValueType.String:
+                return ReferenceEquals(_refValue, other._refValue) ||
+                       string.Equals(Unsafe.As<string>(_refValue), Unsafe.As<string>(other._refValue), StringComparison.Ordinal);
             // Ensure deleted DreamObjects are made null
             case DreamValueType.DreamObject: {
                 Debug.Assert(_refValue is DreamObject or null, "Failed to cast _refValue to DreamObject");
                 Debug.Assert(other._refValue is DreamObject or null, "Failed to cast other._refValue to DreamObject");
-                if (_refValue != null && Unsafe.As<DreamObject>(_refValue).Deleted)
-                    _refValue = null;
-                if (other._refValue != null && Unsafe.As<DreamObject>(other._refValue).Deleted)
-                    other._refValue = null;
-                break;
+                var dreamObject = Unsafe.As<DreamObject?>(_refValue);
+                var otherDreamObject = Unsafe.As<DreamObject?>(other._refValue);
+
+                if (dreamObject?.Deleted == true)
+                    dreamObject = null;
+                if (otherDreamObject?.Deleted == true)
+                    otherDreamObject = null;
+
+                return dreamObject?.RefId == otherDreamObject?.RefId;
             }
         }
 
@@ -488,11 +533,20 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
     }
 
     public override int GetHashCode() {
-        if (_refValue != null) {
-            return _refValue.GetHashCode();
-        }
+        switch (Type) {
+            case DreamValueType.Float:
+                return HashCode.Combine(Type, _floatValue);
+            case DreamValueType.DreamObject: {
+                Debug.Assert(_refValue is DreamObject or null, "Failed to cast _refValue to DreamObject");
+                var dreamObject = Unsafe.As<DreamObject?>(_refValue);
 
-        return _floatValue.GetHashCode();
+                return HashCode.Combine(Type, dreamObject?.Deleted == false ? dreamObject.RefId : 0);
+            }
+            case 0:
+                return 0;
+            default:
+                return HashCode.Combine(Type, _refValue);
+        }
     }
 
     public static bool operator ==(DreamValue a, DreamValue b) {
@@ -503,6 +557,8 @@ public struct DreamValue : IDisposable, IEquatable<DreamValue> {
         return !a.Equals(b);
     }
 }
+
+public sealed record DreamModifiedType(TreeEntry Type, string VariableOverridesJson);
 
 #region Serialization
 
@@ -535,7 +591,8 @@ public sealed partial class DreamValueJsonConverter : JsonConverter<DreamValue> 
 
                     // TODO Check what happens with multiple states
                     var resource = icon.Icon.GenerateDMI();
-                    var base64 = Convert.ToBase64String(resource.ResourceData);
+                    var resourceData = resource.ResourceData ?? throw new InvalidOperationException("Generated DMI resource did not contain data");
+                    var base64 = Convert.ToBase64String(resourceData);
                     writer.WriteString("icon-data", base64);
                 }
 
@@ -561,7 +618,7 @@ public sealed partial class DreamValueJsonConverter : JsonConverter<DreamValue> 
 
         DreamValue value;
         switch (type) {
-            case DreamValue.DreamValueType.String: value = new DreamValue(reader.GetString()); break;
+            case DreamValue.DreamValueType.String: value = new DreamValue(reader.GetString() ?? string.Empty); break;
             case DreamValue.DreamValueType.Float: value = new DreamValue(reader.GetSingle()); break;
             case DreamValue.DreamValueType.DreamObject: {
                 string? objectTypePath = reader.GetString();
@@ -618,6 +675,7 @@ public sealed class DreamValueDataNode(DreamValue value)
         return Value == node.Value ? null : Copy();
     }
 
+    [Obsolete("DataNode inheritance is obsolete")]
     public override DreamValueDataNode PushInheritance(DreamValueDataNode node) {
         return Copy();
     }

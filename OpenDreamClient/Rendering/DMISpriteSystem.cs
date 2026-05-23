@@ -92,6 +92,7 @@ internal sealed partial class DMISpriteSystem : EntitySystem {
 
         _mapOverlay.DirtyTileVisibility(); // Our icon's opacity may have changed
         component.ScreenLocation = state.ScreenLocation;
+        component.BoundOffset = state.BoundOffset;
         component.Icon.SetAppearance(state.AppearanceId);
     }
 

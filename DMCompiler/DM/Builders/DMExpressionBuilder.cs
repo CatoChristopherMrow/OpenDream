@@ -2,6 +2,7 @@ using DMCompiler.Compiler;
 using Resource = DMCompiler.DM.Expressions.Resource;
 using DMCompiler.Compiler.DM.AST;
 using DMCompiler.DM.Expressions;
+using System.Text.Json;
 using static DMCompiler.DM.Builders.DMExpressionBuilder.ScopeMode;
 using String = DMCompiler.DM.Expressions.String;
 
@@ -64,8 +65,16 @@ internal class DMExpressionBuilder(ExpressionContext ctx, DMExpressionBuilder.Sc
             case DMASTStringFormat stringFormat: result = BuildStringFormat(stringFormat, inferredPath); break;
             case DMASTIdentifier identifier: result = BuildIdentifier(identifier, inferredPath); break;
             case DMASTScopeIdentifier globalIdentifier: result = BuildScopeIdentifier(globalIdentifier, inferredPath); break;
-            case DMASTCallableSelf: result = new ProcSelf(expression.Location, ctx.Proc.ReturnTypes); break;
-            case DMASTCallableSuper: result = new ProcSuper(expression.Location, ctx.Type.GetProcReturnTypes(ctx.Proc.Name)); break;
+            case DMASTCallableSelf:
+                result = ctx.ProcOrNull != null
+                    ? new ProcSelf(expression.Location, ctx.Proc.ReturnTypes)
+                    : BadExpression(WarningCode.BadExpression, expression.Location, "Cannot use . outside of a proc");
+                break;
+            case DMASTCallableSuper:
+                result = ctx.ProcOrNull != null
+                    ? new ProcSuper(expression.Location, ctx.Type.GetProcReturnTypes(ctx.Proc.Name))
+                    : BadExpression(WarningCode.BadExpression, expression.Location, "Cannot use .. outside of a proc");
+                break;
             case DMASTCallableProcIdentifier procIdentifier: result = BuildCallableProcIdentifier(procIdentifier, ctx.Type); break;
             case DMASTProcCall procCall: result = BuildProcCall(procCall, inferredPath); break;
             case DMASTAssign assign: result = BuildAssign(assign, inferredPath); break;
@@ -254,6 +263,11 @@ internal class DMExpressionBuilder(ExpressionContext ctx, DMExpressionBuilder.Sc
                 result = new LessThanOrEqual(lessThanOrEqual.Location,
                     BuildExpression(lessThanOrEqual.LHS, inferredPath),
                     BuildExpression(lessThanOrEqual.RHS, inferredPath));
+                break;
+            case DMASTCompare compare:
+                result = new Compare(compare.Location,
+                    BuildExpression(compare.LHS, inferredPath),
+                    BuildExpression(compare.RHS, inferredPath));
                 break;
             case DMASTOr or:
                 result = new Or(or.Location,
@@ -470,7 +484,12 @@ internal class DMExpressionBuilder(ExpressionContext ctx, DMExpressionBuilder.Sc
                 result = new Abs(abs.Location, BuildExpression(abs.Value, inferredPath));
                 break;
             case DMASTVarDeclExpression varDeclExpr:
-                var declIdentifier = new DMASTIdentifier(expression.Location, varDeclExpr.DeclPath.Path.LastElement);
+                if (varDeclExpr.DeclPath.Path.LastElement is not { } varDeclName) {
+                    result = BadExpression(WarningCode.BadExpression, expression.Location, "Invalid var declaration");
+                    break;
+                }
+
+                var declIdentifier = new DMASTIdentifier(expression.Location, varDeclName);
 
                 result = BuildIdentifier(declIdentifier, inferredPath);
                 break;
@@ -497,10 +516,35 @@ internal class DMExpressionBuilder(ExpressionContext ctx, DMExpressionBuilder.Sc
             case DMASTConstantResource constResource: return new Resource(Compiler, constant.Location, constResource.Path);
             case DMASTConstantPath constPath: return BuildPath(constant.Location, constPath.Value.Path);
             case DMASTModifiedType constModifiedPath:
-                Compiler.UnimplementedWarning(constant.Location,
-                    "Using modified types in this way is unimplemented, and will just point to the original type");
+                if (!ObjectTree.TryGetDMObject(constModifiedPath.Value.Path, out var owner)) {
+                    return UnknownReference(constModifiedPath.Location, $"Type {constModifiedPath.Value.Path} does not exist");
+                }
 
-                return BuildPath(constant.Location, constModifiedPath.Value.Path);
+                if (constModifiedPath.VarOverrides is null || constModifiedPath.VarOverrides.Count == 0) {
+                    return new ModifiedTypeReference(constant.Location, owner, "{}");
+                }
+
+                var failed = false;
+                var overrides = new Dictionary<string, object?>();
+                foreach (var varOverride in constModifiedPath.VarOverrides) {
+                    if (!owner.HasLocalVariable(varOverride.Key)) {
+                        return UnknownIdentifier(constModifiedPath.Location, varOverride.Key);
+                    }
+
+                    var jsonExpression = BuildExpression(varOverride.Value);
+                    if (!jsonExpression.TryAsJsonRepresentation(Compiler, out var jsonValue)) {
+                        failed = true;
+                        break;
+                    }
+
+                    overrides[varOverride.Key] = jsonValue;
+                }
+
+                if (failed) {
+                    return BadExpression(WarningCode.BadExpression, constModifiedPath.Location, "Expected a constant expression");
+                }
+
+                return new ModifiedTypeReference(constant.Location, owner, JsonSerializer.Serialize(overrides));
             case DMASTUpwardPathSearch upwardSearch:
                 BuildExpression(upwardSearch.Path).TryAsConstant(Compiler, out var pathExpr);
                 if (pathExpr is not IConstantPath expr)
@@ -597,9 +641,15 @@ internal class DMExpressionBuilder(ExpressionContext ctx, DMExpressionBuilder.Sc
         var name = identifier.Identifier;
         if (scopeMode == Normal) {
             // ReSharper disable once ConditionalAccessQualifierIsNonNullableAccordingToAPIContract
-            var localVar = ctx.Proc?.GetLocalVariable(name);
+            var localVar = ctx.ProcOrNull?.GetLocalVariable(name);
             if (localVar is not null) {
                 return new Local(identifier.Location, localVar);
+            }
+
+            var procGlobalId = ctx.ProcOrNull?.GetGlobalVariableId(name);
+            if (procGlobalId != null) {
+                var procGlobalVar = ObjectTree.Globals[procGlobalId.Value];
+                return new GlobalField(identifier.Location, procGlobalVar.Type, procGlobalId.Value, procGlobalVar.ValType);
             }
         }
 
@@ -608,7 +658,7 @@ internal class DMExpressionBuilder(ExpressionContext ctx, DMExpressionBuilder.Sc
             return new Field(identifier.Location, field, field.ValType);
         }
 
-        var globalId = ctx.Proc?.GetGlobalVariableId(name) ?? ctx.Type.GetGlobalVariableId(name);
+        var globalId = ctx.ProcOrNull?.GetGlobalVariableId(name) ?? ctx.Type.GetGlobalVariableId(name);
 
         if (globalId != null) {
             if (field is not null)
@@ -646,6 +696,10 @@ internal class DMExpressionBuilder(ExpressionContext ctx, DMExpressionBuilder.Sc
 
                 return BuildPath(identifier.Location, inferredPath.Value);
             case "__PROC__": // The saner alternative to "....."
+                if (ctx.ProcOrNull == null)
+                    return BadExpression(WarningCode.BadExpression, identifier.Location,
+                        "__PROC__ cannot be used here, there is no current proc");
+
                 var path = ctx.Type.Path.AddToPath("proc/" + ctx.Proc.Name);
 
                 return new ConstantProcReference(identifier.Location, path, ctx.Proc);
@@ -696,7 +750,7 @@ internal class DMExpressionBuilder(ExpressionContext ctx, DMExpressionBuilder.Sc
         if (scopeIdentifier.Expression is DMASTIdentifier { Identifier: "type" or "parent_type" } identifier) {
             // This is the same behaviour as in BYOND, but BYOND simply raises an undefined var error.
             // We want to give end users an explanation at least.
-            if (scopeMode is Normal && ctx.Proc != null) {
+            if (scopeMode is Normal && ctx.ProcOrNull != null) {
                 if (ctx.Proc.GetLocalVariable(identifier.Identifier) != null) {
                     // actually - it's referring to a local variable named "type" or "parent_type"... just do the usual thing
                     Compiler.Emit(WarningCode.ScopeOperandNamedType, identifier.Location,

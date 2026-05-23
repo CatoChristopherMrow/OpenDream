@@ -48,8 +48,9 @@ public sealed unsafe class NativeProc : DreamProc {
     private readonly WalkManager _walkManager;
     private readonly DreamObjectTree _objectTree;
 
-    public readonly ref struct Bundle(NativeProc proc, DreamProcArguments arguments) {
+    public readonly ref struct Bundle(NativeProc proc, DreamThread thread, DreamProcArguments arguments) {
         public readonly NativeProc Proc = proc;
+        public readonly DreamThread Thread = thread;
 
         // NOTE: Deliberately not using DreamProcArguments here, tis slow.
         public readonly ReadOnlySpan<DreamValue> Arguments = arguments.Values;
@@ -80,7 +81,7 @@ public sealed unsafe class NativeProc : DreamProc {
     private readonly Dictionary<string, DreamValue>? _defaultArgumentValues;
     private readonly delegate*<Bundle, DreamObject?, DreamObject?, DreamValue> _handler;
 
-    public NativeProc(int id, TreeEntry owningType, string name, List<string> argumentNames, Dictionary<string, DreamValue> defaultArgumentValues, HandlerFn handler, DreamManager dreamManager, DreamRefManager refManager, AtomManager atomManager, IDreamMapManager mapManager, DreamResourceManager resourceManager, WalkManager walkManager, DreamObjectTree objectTree)
+    public NativeProc(int id, TreeEntry owningType, string name, List<string> argumentNames, Dictionary<string, DreamValue>? defaultArgumentValues, HandlerFn handler, DreamManager dreamManager, DreamRefManager refManager, AtomManager atomManager, IDreamMapManager mapManager, DreamResourceManager resourceManager, WalkManager walkManager, DreamObjectTree objectTree)
         : base(id, owningType, name, null, ProcAttributes.None, argumentNames, null, null, null, null, null, 0) {
         _defaultArgumentValues = defaultArgumentValues;
         _handler = (delegate*<Bundle, DreamObject?, DreamObject?, DreamValue>)handler.Method.MethodHandle.GetFunctionPointer();
@@ -101,7 +102,7 @@ public sealed unsafe class NativeProc : DreamProc {
 
     [MustDisposeResource]
     public DreamValue Call(DreamThread thread, DreamObject? src, DreamObject? usr, [HandlesResourceDisposal] DreamProcArguments arguments) {
-        var bundle = new Bundle(this, arguments);
+        var bundle = new Bundle(this, thread, arguments);
         var result = _handler(bundle, src, usr); // TODO: Include this call in the thread's stack in error traces
 
         arguments.Dispose();

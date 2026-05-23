@@ -105,8 +105,9 @@ internal sealed class StatPanel : InfoPanel {
         }
 
         private void OnKeyBindDown(GUIBoundKeyEventArgs e) {
-            if (e.Function != EngineKeyFunctions.Use && e.Function != OpenDreamKeyFunctions.MouseMiddle &&
-                e.Function != EngineKeyFunctions.TextCursorSelect)
+            if (e.Function != EngineKeyFunctions.Use && e.Function != EngineKeyFunctions.UIRightClick &&
+                e.Function != OpenDreamKeyFunctions.MouseMiddle && e.Function != OpenDreamKeyFunctions.MouseButton4 &&
+                e.Function != OpenDreamKeyFunctions.MouseButton5 && e.Function != EngineKeyFunctions.TextCursorSelect)
                 return;
             if (_atomRef == null)
                 return;
@@ -114,7 +115,7 @@ internal sealed class StatPanel : InfoPanel {
                 return;
 
             e.Handle();
-            mouseInputSystem.HandleStatClick(_atomRef, e.Function == EngineKeyFunctions.UIRightClick, e.Function == OpenDreamKeyFunctions.MouseMiddle);
+            mouseInputSystem.HandleStatClick(_atomRef, MouseInputSystem.GetMouseButton(e.Function));
         }
     }
 
@@ -277,8 +278,8 @@ public sealed partial class ControlInfo : InterfaceControl {
     [Dependency] private IClientNetManager _netManager = default!;
     [Dependency] private IEntitySystemManager _entitySystemManager = default!;
 
-    private PanelContainer _container;
-    private TabContainer _tabControl;
+    private PanelContainer _container = default!;
+    private TabContainer _tabControl = default!;
     private readonly Dictionary<string, StatPanel> _statPanels = new();
     private readonly SortedDictionary<string, VerbPanel> _verbPanels = new();
 

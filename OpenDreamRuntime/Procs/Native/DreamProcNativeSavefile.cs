@@ -142,4 +142,20 @@ internal static class DreamProcNativeSavefile {
         savefile.Flush();
         return DreamValue.Null;
     }
+
+    [DreamProc("Lock")]
+    [DreamProcParameter("timeout", Type = DreamValueTypeFlag.Float)]
+    public static DreamValue NativeProc_Lock(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        var savefile = (DreamObjectSavefile)src!;
+
+        return new DreamValue(savefile.Lock() ? 1 : 0);
+    }
+
+    [DreamProc("Unlock")]
+    public static DreamValue NativeProc_Unlock(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        var savefile = (DreamObjectSavefile)src!;
+
+        savefile.Unlock();
+        return DreamValue.Null;
+    }
 }

@@ -326,7 +326,8 @@ public class DMCompiler {
             GlobalListJson globalListJson = new GlobalListJson {
                 GlobalCount = DMObjectTree.Globals.Count,
                 Names = new(),
-                Globals = new()
+                Globals = new(),
+                InitProcs = new()
             };
 
             globalListJson.Names.EnsureCapacity(globalListJson.GlobalCount);
@@ -344,7 +345,14 @@ public class DMCompiler {
                 if (globalJson != null) {
                     globalListJson.Globals.Add(i, globalJson);
                 }
+
+                if (global.InitProc is { } initProc) {
+                    globalListJson.InitProcs.Add(i, initProc);
+                }
             }
+
+            if (globalListJson.InitProcs.Count == 0)
+                globalListJson.InitProcs = null;
 
             compiledDream.Globals = globalListJson;
         }

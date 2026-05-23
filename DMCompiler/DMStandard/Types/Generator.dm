@@ -2,7 +2,7 @@
 
 /generator
 	parent_type = /datum
-	var/_binobj as opendream_unimplemented
+	var/_binobj
 
 /generator/proc/Rand()
 

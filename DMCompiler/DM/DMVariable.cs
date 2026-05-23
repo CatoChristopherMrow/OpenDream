@@ -10,6 +10,7 @@ internal sealed class DMVariable {
     public readonly bool IsTmp;
     public readonly bool IsFinal;
     public DMExpression? Value;
+    public int? InitProc;
     public DMComplexValueType ValType;
 
     /// <remarks>
@@ -39,6 +40,7 @@ internal sealed class DMVariable {
         IsFinal = copyFrom.IsFinal;
         IsTmp = copyFrom.IsTmp;
         Value = copyFrom.Value;
+        InitProc = copyFrom.InitProc;
         ValType = copyFrom.ValType;
     }
 

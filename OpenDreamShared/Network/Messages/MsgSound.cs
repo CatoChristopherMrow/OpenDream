@@ -1,5 +1,7 @@
 using System;
+using System.Numerics;
 using Lidgren.Network;
+using Robust.Shared.GameObjects;
 using Robust.Shared.Network;
 using Robust.Shared.Serialization;
 
@@ -73,6 +75,21 @@ namespace OpenDreamShared.Network.Messages {
         /// </summary>
         public string File = string.Empty;
 
+        /// <summary>
+        /// Movable atom this sound should follow, if present
+        /// </summary>
+        public NetEntity Atom = NetEntity.Invalid;
+
+        /// <summary>
+        /// Positional offset from sound.x/y/z and sound.transform translation
+        /// </summary>
+        public Vector3 OffsetPosition;
+
+        /// <summary>
+        /// Maximum positional range for attenuation. 0 uses the engine default.
+        /// </summary>
+        public float Falloff;
+
         public SoundData(NetIncomingMessage buffer) {
             ReadFromBuffer(buffer);
         }
@@ -84,6 +101,9 @@ namespace OpenDreamShared.Network.Messages {
             Length = buffer.ReadFloat();
             Repeat = buffer.ReadByte();
             File = buffer.ReadString();
+            Atom = buffer.ReadNetEntity();
+            OffsetPosition = new Vector3(buffer.ReadFloat(), buffer.ReadFloat(), buffer.ReadFloat());
+            Falloff = buffer.ReadFloat();
         }
 
         public void WriteToBuffer(NetOutgoingMessage buffer) {
@@ -93,6 +113,11 @@ namespace OpenDreamShared.Network.Messages {
             buffer.Write(Length);
             buffer.Write(Repeat);
             buffer.Write(File);
+            buffer.Write(Atom);
+            buffer.Write(OffsetPosition.X);
+            buffer.Write(OffsetPosition.Y);
+            buffer.Write(OffsetPosition.Z);
+            buffer.Write(Falloff);
         }
     }
 }

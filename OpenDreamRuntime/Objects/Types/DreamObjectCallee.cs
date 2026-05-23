@@ -7,6 +7,14 @@ public sealed class DreamObjectCallee(DreamObjectDefinition objectDefinition) : 
     public DMProcState? ProcState;
     public long ProcStateId; // Used to ensure the proc state hasn't been reused for another proc
 
+    public static DreamValue CreateDreamValue(DreamObjectTree objectTree, DMProcState procState) {
+        var callee = objectTree.CreateObject<DreamObjectCallee>(objectTree.Callee);
+
+        callee.ProcState = procState;
+        callee.ProcStateId = procState.Id;
+        return new(callee);
+    }
+
     protected override bool TryGetVar(string varName, out DreamValue value) {
         if (ProcState == null || ProcState.Id != ProcStateId)
             throw new Exception("This callee has expired");
@@ -19,8 +27,7 @@ public sealed class DreamObjectCallee(DreamObjectDefinition objectDefinition) : 
                 value = new(new ProcArgsList(ObjectTree.List.ObjectDefinition, ProcState));
                 return true;
             case "caller":
-                // TODO
-                value = DreamValue.Null;
+                value = CreateCallerDreamValue();
                 return true;
             case "name":
                 value = new(ProcState.Proc.VerbName);
@@ -54,6 +61,24 @@ public sealed class DreamObjectCallee(DreamObjectDefinition objectDefinition) : 
                 value = DreamValue.Null;
                 return false;
         }
+    }
+
+    private DreamValue CreateCallerDreamValue() {
+        if (ProcState == null || ProcState.Id != ProcStateId)
+            throw new Exception("This callee has expired");
+
+        var foundCallee = false;
+        foreach (var state in ProcState.Thread.InspectStack()) {
+            if (!foundCallee) {
+                foundCallee = ReferenceEquals(state, ProcState);
+                continue;
+            }
+
+            if (state is DMProcState caller)
+                return CreateDreamValue(ObjectTree, caller);
+        }
+
+        return DreamValue.Null;
     }
 
     protected override void SetVar(string varName, DreamValue value) {

@@ -111,7 +111,7 @@ public sealed partial class DreamRefManager {
         if (value.TryGetValueAsType(out var type))
             return (uint)RefType.DreamType | (uint)type.Id;
         if (value.TryGetValueAsDreamResource(out var refRsc))
-            return (uint)RefType.DreamResource | (uint)refRsc.Id;
+            return (uint)(refRsc is IconResource ? RefType.DreamResourceIcon : RefType.DreamResource) | (uint)refRsc.Id;
         if (value.TryGetValueAsProc(out var proc))
             return (uint)RefType.Proc | (uint)proc.Id;
 
@@ -291,7 +291,8 @@ public sealed partial class DreamRefManager {
     /// <param name="ref">The ref for the object to free</param>
     public void DeleteRef(uint @ref) {
         var refType = (RefType)(@ref & RefTypeMask);
-        var bucket = _buckets[refType];
+        if (!_buckets.TryGetValue(refType, out var bucket))
+            return;
 
         bucket.Remove((int)(@ref & RefIdMask));
     }
@@ -300,9 +301,9 @@ public sealed partial class DreamRefManager {
     /// Enumerate every alive DreamObject of a certain <see cref="RefType"/>
     /// </summary>
     public IEnumerable<DreamObject> EnumerateType(RefType refType) {
-        var bucket = _buckets[refType];
-
-        return bucket.Enumerate();
+        return _buckets.TryGetValue(refType, out var bucket)
+            ? bucket.Enumerate()
+            : [];
     }
 
     /// <summary>
@@ -363,7 +364,10 @@ public sealed partial class DreamRefManager {
     /// <param name="value">The DreamObject to create a ref for</param>
     /// <returns>The DreamObject's new ref</returns>
     private uint CreateRef(RefType refType, DreamObject value) {
-        var bucket = _buckets[refType];
+        if (!_buckets.TryGetValue(refType, out var bucket)) {
+            bucket = new();
+            _buckets[refType] = bucket;
+        }
 
         return (uint)refType | (uint)bucket.Add(value);
     }

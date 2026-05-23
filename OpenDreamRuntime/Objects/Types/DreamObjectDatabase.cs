@@ -73,6 +73,10 @@ public sealed class DreamObjectDatabase(DreamObjectDefinition objectDefinition) 
         return false;
     }
 
+    public bool IsConnected() {
+        return _connection?.State == ConnectionState.Open;
+    }
+
     public void SetError(int code, string message) {
         _errorCode = code;
         _errorMessage = message;

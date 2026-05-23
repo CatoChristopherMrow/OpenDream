@@ -90,7 +90,7 @@ internal static class DreamProcNativeWorld {
         bundle.GetArgument(0, "config_set").TryGetValueAsString(out var configSetArg);
         var param = bundle.GetArgument(1, "param");
 
-        ProcessConfigSet(configSetArg, out _, out var configSet);
+        ProcessConfigSet(configSetArg ?? string.Empty, out _, out var configSet);
 
         switch (configSet) {
             case "env":
@@ -112,6 +112,21 @@ internal static class DreamProcNativeWorld {
             default:
                 throw new ArgumentException("Incorrect GetConfig config_set: " + configSet);
         }
+    }
+
+    [DreamProc("OpenPort")]
+    [DreamProcParameter("port", Type = DreamValue.DreamValueTypeFlag.Float | DreamValue.DreamValueTypeFlag.String)]
+    public static DreamValue NativeProc_OpenPort(NativeProc.Bundle bundle, DreamObject? src, DreamObject? usr) {
+        var portArg = bundle.GetArgument(0, "port");
+        if (portArg.IsNull)
+            return DreamValue.False;
+
+        if (portArg.TryGetValueAsFloat(out var portNumber))
+            return portNumber is >= 0 and <= ushort.MaxValue ? DreamValue.True : DreamValue.False;
+
+        return portArg.TryGetValueAsString(out var portString) && !string.IsNullOrWhiteSpace(portString)
+            ? DreamValue.True
+            : DreamValue.False;
     }
 
     [DreamProc("Profile")]
@@ -138,6 +153,11 @@ internal static class DreamProcNativeWorld {
         }
 
         // TODO: Actually return profiling data
+        // BYOND accepts world.Profile(command, "json") as shorthand for the format.
+        if (string.IsNullOrEmpty(format) && type == "json") {
+            format = type;
+            type = null;
+        }
 
         if (format == "json") {
             return new("[]");
@@ -179,10 +199,13 @@ internal static class DreamProcNativeWorld {
         bundle.GetArgument(1, "param").TryGetValueAsString(out var param);
         var value = bundle.GetArgument(2, "value");
 
-        ProcessConfigSet(configSetArg, out _, out var configSet);
+        ProcessConfigSet(configSetArg ?? string.Empty, out _, out var configSet);
 
         switch (configSet) {
             case "env":
+                if (param == null)
+                    return DreamValue.Null;
+
                 value.TryGetValueAsString(out var valueString);
                 Environment.SetEnvironmentVariable(param, valueString);
                 break;

@@ -5,6 +5,8 @@ using OpenDreamShared.Dream;
 namespace OpenDreamRuntime.Objects.Types;
 
 public sealed class DreamObjectMatrix(DreamObjectDefinition objectDefinition) : DreamObject(objectDefinition) {
+    private const float Epsilon = 0.000001f;
+
     public float A { get=> _aInner.UnsafeGetValueAsFloat(); set { _aInner.DecRef(); _aInner = new(value); } }
     public float B { get=> _bInner.UnsafeGetValueAsFloat(); set { _bInner.DecRef(); _bInner = new(value); } }
     public float C { get=> _cInner.UnsafeGetValueAsFloat(); set { _cInner.DecRef(); _cInner = new(value); } }
@@ -327,6 +329,73 @@ public sealed class DreamObjectMatrix(DreamObjectDefinition objectDefinition) : 
         matrix.D *= y;
         matrix.E *= y;
         matrix.F *= y;
+    }
+
+    public static void InterpolateMatrix(DreamObjectMatrix matrix, DreamObjectMatrix target, float t) {
+        if (IsInterpolationDegenerate(matrix) || IsInterpolationDegenerate(target)) {
+            matrix.A += (target.A - matrix.A) * t;
+            matrix.B += (target.B - matrix.B) * t;
+            matrix.C += (target.C - matrix.C) * t;
+            matrix.D += (target.D - matrix.D) * t;
+            matrix.E += (target.E - matrix.E) * t;
+            matrix.F += (target.F - matrix.F) * t;
+            return;
+        }
+
+        DecomposeMatrix(matrix, out var scaleX, out var scaleY, out var skew, out var angle);
+        DecomposeMatrix(target, out var targetScaleX, out var targetScaleY, out var targetSkew, out var targetAngle);
+
+        scaleX += (targetScaleX - scaleX) * t;
+        scaleY += (targetScaleY - scaleY) * t;
+        skew += (targetSkew - skew) * t;
+        angle += NormalizeAngle(targetAngle - angle) * t;
+
+        var angleSin = MathF.Sin(angle);
+        var angleCos = MathF.Cos(angle);
+
+        matrix.A = scaleX * angleCos + skew * angleSin;
+        matrix.B = scaleY * angleSin;
+        matrix.C += (target.C - matrix.C) * t;
+        matrix.D = -scaleX * angleSin + skew * angleCos;
+        matrix.E = scaleY * angleCos;
+        matrix.F += (target.F - matrix.F) * t;
+    }
+
+    private static bool IsInterpolationDegenerate(DreamObjectMatrix matrix) {
+        return ApproximatelyZero(matrix.B) && ApproximatelyZero(matrix.E);
+    }
+
+    private static void DecomposeMatrix(DreamObjectMatrix matrix, out float scaleX, out float scaleY, out float skew, out float angle) {
+        scaleY = MathF.Sqrt(matrix.B * matrix.B + matrix.E * matrix.E);
+
+        if (ApproximatelyZero(scaleY)) {
+            angle = 0f;
+            scaleX = matrix.A;
+            skew = matrix.D;
+            return;
+        }
+
+        angle = MathF.Atan2(matrix.B, matrix.E);
+        var angleSin = MathF.Sin(angle);
+        var angleCos = MathF.Cos(angle);
+
+        scaleX = angleCos * matrix.A - angleSin * matrix.D;
+        skew = angleSin * matrix.A + angleCos * matrix.D;
+    }
+
+    private static float NormalizeAngle(float angle) {
+        const float tau = MathF.PI * 2f;
+
+        while (angle > MathF.PI)
+            angle -= tau;
+        while (angle < -MathF.PI)
+            angle += tau;
+
+        return MathF.Abs(MathF.Abs(angle) - MathF.PI) < Epsilon ? 0f : angle;
+    }
+
+    private static bool ApproximatelyZero(float value) {
+        return MathF.Abs(value) < Epsilon;
     }
 
     /// <summary> Adds the second given matrix to the first given matrix. </summary>

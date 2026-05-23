@@ -41,6 +41,19 @@ public sealed partial class AtomGlideSystem : EntitySystem {
         _currentGlides.Clear();
     }
 
+    public bool TryGetLogicalPosition(EntityUid uid, TransformComponent transform, out Vector2 position) {
+        foreach (var glide in _currentGlides) {
+            if (glide.Uid != uid || glide.Transform != transform)
+                continue;
+
+            position = glide.EndPos;
+            return true;
+        }
+
+        position = default;
+        return false;
+    }
+
     public override void FrameUpdate(float frameTime) {
         // As of writing, Reset() does nothing but clear the transform system's _lerpingTransforms list
         // We update before SharedTransformSystem so this serves to disable RT's lerping, which fights our gliding

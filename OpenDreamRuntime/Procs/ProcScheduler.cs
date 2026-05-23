@@ -23,7 +23,8 @@ namespace OpenDreamRuntime.Procs;
 
 public sealed partial class ProcScheduler {
     private readonly HashSet<AsyncNativeProc.AsyncNativeProcState> _sleeping = new();
-    private readonly Queue<AsyncNativeProc.AsyncNativeProcState> _scheduled = new();
+    private readonly HashSet<DreamThread> _delayedSpawnThreads = new();
+    private readonly Queue<ScheduledWork> _scheduled = new();
     private AsyncNativeProc.AsyncNativeProcState? _current;
 
     public Task Schedule(AsyncNativeProc.AsyncNativeProcState state, Func<AsyncNativeProc.AsyncNativeProcState, Task<DreamValue>> taskFunc) {
@@ -32,7 +33,7 @@ public sealed partial class ProcScheduler {
             if (!_sleeping.Remove(state))
                 return;
 
-            _scheduled.Enqueue(state);
+            _scheduled.Enqueue(new ScheduledWork(state));
         }
 
         var task = Foo();
@@ -52,13 +53,31 @@ public sealed partial class ProcScheduler {
         // When we drain the _deferredTasks lists, it'll indirectly schedule things into _scheduled again.
         // This should all happen synchronously (see above).
         while (_scheduled.Count > 0 || _deferredTasks.Count > 0) {
-            while (_scheduled.TryDequeue(out _current)) {
-                _current.SafeResume();
+            while (_scheduled.TryDequeue(out var work)) {
+                if (work.State is { } state) {
+                    _current = state;
+                    state.SafeResume();
+                    _current = null;
+                } else if (work.Thread is { } thread) {
+                    thread.Resume().Dispose();
+                }
             }
 
             while (_deferredTasks.TryDequeue(out var task)) {
                 task.TrySetResult();
             }
+        }
+    }
+
+    public async void ScheduleSpawn(DreamThread thread, float delay) {
+        _delayedSpawnThreads.Add(thread);
+
+        try {
+            await CreateDelay(delay);
+            _delayedSpawnThreads.Remove(thread);
+            _scheduled.Enqueue(new ScheduledWork(thread));
+        } finally {
+            _delayedSpawnThreads.Remove(thread);
         }
     }
 
@@ -70,16 +89,31 @@ public sealed partial class ProcScheduler {
             yield return _current.Thread;
         }
 
-        foreach (var state in _scheduled) {
-            if (state.Thread == null)
-                continue;
-            yield return state.Thread;
+        foreach (var work in _scheduled) {
+            if (work.Thread is { } thread) {
+                yield return thread;
+            } else if (work.State?.Thread is { } stateThread) {
+                yield return stateThread;
+            }
         }
 
-        foreach (var state in _sleeping) {
-            if (state.Thread == null)
-                continue;
-            yield return state.Thread;
+        foreach (var thread in _delayedSpawnThreads) {
+            yield return thread;
+        }
+    }
+
+    private readonly struct ScheduledWork {
+        public readonly AsyncNativeProc.AsyncNativeProcState? State;
+        public readonly DreamThread? Thread;
+
+        public ScheduledWork(AsyncNativeProc.AsyncNativeProcState state) {
+            State = state;
+            Thread = null;
+        }
+
+        public ScheduledWork(DreamThread thread) {
+            State = null;
+            Thread = thread;
         }
     }
 }

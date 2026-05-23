@@ -1,6 +1,9 @@
+#include "_Globals.dm" // This needs to go before the defines
+#include "Defines.dm"
+
 //These procs should be in alphabetical order, as in DreamProcNativeRoot.cs
 proc/alert(Usr = usr, Message, Title, Button1 = "Ok", Button2, Button3) as text
-proc/animate(Object, time, loop, easing, flags, delay, pixel_x, pixel_y, pixel_z, maptext, maptext_width, maptext_height, maptext_x, maptext_y, dir, alpha, transform, color, luminosity, infra_luminosity, layer, glide_size, icon, icon_state, invisibility, suffix) as null
+proc/animate(Object, time, loop, easing, flags, delay, tag, command, pixel_x, pixel_y, pixel_z, pixel_w, icon_w, icon_z, maptext, maptext_width, maptext_height, maptext_x, maptext_y, dir, alpha, transform, color, luminosity, infra_luminosity, layer, glide_size, icon, icon_state, invisibility, suffix) as null
 proc/ascii2text(N) as text
 proc/block(atom/Start, atom/End, StartZ, EndX=Start, EndY=End, EndZ=StartZ) as /list
 proc/bounds_dist(atom/Ref, atom/Target) as num
@@ -14,10 +17,10 @@ proc/copytext(T, Start = 1, End = 0) as text|null
 proc/copytext_char(T,Start=1,End=0) as text|null
 proc/CRASH(msg) as null
 proc/fcopy(Src, Dst) as num
-proc/fcopy_rsc(File) as num|null
+proc/fcopy_rsc(File) as /file|null
 proc/fdel(File) as num
 proc/fexists(File) as num
-proc/file(Path)
+proc/file(Path) as /file
 proc/file2text(File) as text|null
 proc/filter(type, ...)
 proc/findtext(Haystack, Needle, Start = 1, End = 0) as num
@@ -63,12 +66,12 @@ proc/json_encode(Value, flags)
 proc/length_char(E) as num
 proc/lerp(A, B, factor)
 proc/list2params(List) as text
+proc/load_ext(LibName, FuncName)
 proc/lowertext(T as text) as text
 proc/max(A) as num|text|null
 proc/md5(T) as text|null
 proc/min(A) as num|text|null
 proc/noise_hash(...) as num
-	set opendream_unimplemented = 1
 	return 0.5
 proc/nonspantext(Haystack, Needles, Start = 1) as num
 proc/nonspantext_char(Haystack, Needles, Start = 1) as num
@@ -135,14 +138,13 @@ proc/winexists(player, control_id) as text
 proc/winget(player, control_id, params)
 proc/winset(player, control_id, params)
 
-#include "_Globals.dm" // This needs to go before the defines
-#include "Defines.dm"
 #include "Types\AList.dm"
 #include "Types\Callee.dm"
 #include "Types\Client.dm"
 #include "Types\Database.dm"
 #include "Types\Datum.dm"
 #include "Types\Exception.dm"
+#include "Types\File.dm"
 #include "Types\Filter.dm"
 #include "Types\Generator.dm"
 #include "Types\Icon.dm"
@@ -182,8 +184,6 @@ proc/winset(player, control_id, params)
 	return step(Ref, step_dir, Speed)
 
 /proc/walk_away(Ref,Trg,Max=5,Lag=0,Speed=0)
-	set opendream_unimplemented = TRUE
-	CRASH("/walk_away() is not implemented")
 
 proc/get_dist(atom/Loc1, atom/Loc2) as num
 	if (!istype(Loc1) || !istype(Loc2)) return 127

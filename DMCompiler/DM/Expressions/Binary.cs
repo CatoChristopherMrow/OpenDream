@@ -549,6 +549,40 @@ internal sealed class LessThanOrEqual(Location location, DMExpression lhs, DMExp
     }
 }
 
+// x <=> y
+internal sealed class Compare(Location location, DMExpression lhs, DMExpression rhs) : BinaryOp(location, lhs, rhs) {
+    public override void EmitPushValue(ExpressionContext ctx) {
+        if (TryAsConstant(ctx.Compiler, out var constant)) {
+            constant.EmitPushValue(ctx);
+            return;
+        }
+
+        LHS.EmitPushValue(ctx);
+        RHS.EmitPushValue(ctx);
+        ctx.Proc.Compare();
+    }
+
+    public override bool TryAsConstant(DMCompiler compiler, [NotNullWhen(true)] out Constant? constant) {
+        if (!LHS.TryAsConstant(compiler, out var lhs) || !RHS.TryAsConstant(compiler, out var rhs)) {
+            constant = null;
+            return false;
+        }
+
+        if (lhs is Null && rhs is Number rhsNum) {
+            constant = new Number(Location, Math.Sign(-rhsNum.Value));
+        } else if (lhs is Number lhsNum && rhs is Null) {
+            constant = new Number(Location, Math.Sign(lhsNum.Value));
+        } else if (lhs is Number lhsNum2 && rhs is Number rhsNum2) {
+            constant = new Number(Location, Math.Sign(lhsNum2.Value - rhsNum2.Value));
+        } else {
+            constant = null;
+            return false;
+        }
+
+        return true;
+    }
+}
+
 // x || y
 internal sealed class Or(Location location, DMExpression lhs, DMExpression rhs) : BinaryOp(location, lhs, rhs) {
     public override bool TryAsConstant(DMCompiler compiler, [NotNullWhen(true)] out Constant? constant) {
@@ -661,6 +695,8 @@ internal abstract class AssignmentBinaryOp(Location location, DMExpression lhs, 
 
 // x = y
 internal sealed class Assignment(Location location, DMExpression lhs, DMExpression rhs) : AssignmentBinaryOp(location, lhs, rhs) {
+    public DMExpression Right => RHS;
+
     public override DreamPath? Path => LHS.Path;
 
     protected override void EmitOp(ExpressionContext ctx, DMReference reference, string endLabel) {

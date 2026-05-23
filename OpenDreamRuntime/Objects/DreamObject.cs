@@ -1,4 +1,5 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using OpenDreamRuntime.Procs;
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -19,6 +20,14 @@ namespace OpenDreamRuntime.Objects;
 
 [Virtual]
 public class DreamObject {
+    private static readonly string? RefTraceType = Environment.GetEnvironmentVariable("OPENDREAM_REF_TRACE_TYPE");
+    private static readonly string? RefTraceRefId = Environment.GetEnvironmentVariable("OPENDREAM_REF_TRACE_REFID");
+    private static readonly bool RefTraceStacks = Environment.GetEnvironmentVariable("OPENDREAM_REF_TRACE_STACKS") != "0";
+    private static readonly bool RefTraceQdelOnly = Environment.GetEnvironmentVariable("OPENDREAM_REF_TRACE_QDEL_ONLY") == "1";
+    private static readonly int? RefTraceMaxRefCount = int.TryParse(Environment.GetEnvironmentVariable("OPENDREAM_REF_TRACE_MAX"), out var maxRefCount)
+        ? maxRefCount
+        : null;
+
     public DreamObjectDefinition ObjectDefinition;
 
     [Access(typeof(DreamObject))]
@@ -28,6 +37,8 @@ public class DreamObject {
 
     [Access(typeof(DreamObject))]
     public int RefCount = 1; // Starts at 1 because the code creating us is considered to hold a ref to us now
+
+    private bool _runningDel;
 
     public virtual bool ShouldCallNew => true;
 
@@ -92,6 +103,7 @@ public class DreamObject {
     public DreamObject(DreamObjectDefinition objectDefinition) {
         ObjectDefinition = objectDefinition;
         RefId = DreamRefManager.GetRef(this);
+        TraceRefChange("new", 0, RefCount, stackSkip: 1);
 
 #if TOOLS
          //if it's not null, subclasses have done their own allocation
@@ -133,22 +145,88 @@ public class DreamObject {
         if (Deleted || Deleting)
             return;
 
+        int oldRefCount = RefCount;
         RefCount++;
+        TraceRefChange("inc", oldRefCount, RefCount);
     }
 
     public void DecRef() {
-        if (Deleted || Deleting)
+        if (Deleted)
             return;
 
+        int oldRefCount = RefCount;
         RefCount--;
-        if (RefCount == 0)
+        TraceRefChange("dec", oldRefCount, RefCount);
+        if (RefCount != 0)
+            return;
+
+        if (Deleting) {
+            if (_runningDel)
+                return;
+
+            HandleDeletion();
+            return;
+        }
+
+        if (IsManagedByQdel()) {
+            Deleting = true;
+            HandleDeletion();
+        } else {
             Delete();
+        }
+    }
+
+    private bool IsManagedByQdel() {
+        if (!ObjectDefinition.HasVariable("gc_destroyed"))
+            return false;
+
+        using var gcDestroyed = GetVariable("gc_destroyed");
+        return gcDestroyed.IsTruthy();
+    }
+
+    private void TraceRefChange(string op, int oldRefCount, int newRefCount, int stackSkip = 2) {
+        if (RefTraceType is not { Length: > 0 })
+            return;
+
+        string type = ObjectDefinition?.Type ?? "<deleted>";
+        if (!type.Contains(RefTraceType, StringComparison.Ordinal))
+            return;
+
+        if (RefTraceRefId is { Length: > 0 } refId && !RefId.ToString("x").Equals(refId, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (RefTraceQdelOnly && !Deleting && !TraceObjectIsQdelManaged())
+            return;
+
+        if (RefTraceMaxRefCount is { } max && oldRefCount > max && newRefCount > max)
+            return;
+
+        Console.Error.WriteLine($"[OD REF TRACE] {op} {type} [{RefId:x}] {oldRefCount}->{newRefCount} deleting={Deleting} deleted={Deleted}");
+        if (RefTraceStacks) {
+            Console.Error.WriteLine(new StackTrace(stackSkip, fNeedFileInfo: true));
+        }
+    }
+
+    private bool TraceObjectIsQdelManaged() {
+        if (Deleted || ObjectDefinition is null || !ObjectDefinition.HasVariable("gc_destroyed"))
+            return false;
+
+        using var gcDestroyed = GetVariable("gc_destroyed");
+        return gcDestroyed.IsTruthy();
     }
 
     /// <summary>
     ///     Del() the object, cleaning up its variables and refs to allow the .NET GC to collect it.
     /// </summary>
     public void Delete() {
+        Delete(force: false);
+    }
+
+    public void HardDelete() {
+        Delete(force: true);
+    }
+
+    private void Delete(bool force) {
         if (Deleting || Deleted)
             return;
 
@@ -157,11 +235,28 @@ public class DreamObject {
             // Don't bother running Del() if there's no code in it
             var datumBaseProc = delProc is DMProc {Bytecode.Length: 0};
             if (!datumBaseProc) {
-                DreamThread.Run(delProc, this, null).Dispose();
+                _runningDel = true;
+                try {
+                    DreamThread.Run(delProc, this, null).Dispose();
+                } finally {
+                    _runningDel = false;
+                }
             }
         }
 
+        if (Deleted)
+            return;
+
+        if (!force && !ShouldDelete()) {
+            Deleting = false;
+            return;
+        }
+
         HandleDeletion();
+    }
+
+    protected virtual bool ShouldDelete() {
+        return true;
     }
 
     public bool IsSubtypeOf(TreeEntry ancestor) {
@@ -202,6 +297,14 @@ public class DreamObject {
         return ObjectDefinition.Variables.Keys;
     }
 
+    internal IEnumerable<(string Name, DreamValue Value)> EnumerateStoredVariablesForDebug() {
+        if (Variables == null)
+            yield break;
+
+        foreach (var (name, value) in Variables)
+            yield return (name, value);
+    }
+
     protected virtual bool TryGetVar(string varName, [MustDisposeResource] out DreamValue value) {
         switch (varName) {
             case "type":
@@ -223,9 +326,10 @@ public class DreamObject {
                 value = (Tag != null) ? new(Tag) : DreamValue.Null;
                 return true;
             default:
-                var success = (Variables?.TryGetValue(varName, out value) is true) ||
-                               (ObjectDefinition.Variables.TryGetValue(varName, out value)) ||
-                               (ObjectDefinition.GlobalVariables.TryGetValue(varName, out var globalIndex)) && ObjectDefinition.DreamManager.Globals.TryGetValue(globalIndex, out value);
+                var success =
+                    (ObjectDefinition.GlobalVariables.TryGetValue(varName, out var globalIndex) && ObjectDefinition.DreamManager.Globals.TryGetValue(globalIndex, out value)) ||
+                    (Variables?.TryGetValue(varName, out value) is true) ||
+                    (ObjectDefinition.Variables.TryGetValue(varName, out value));
 
                 value.IncRef();
                 return success;
@@ -246,6 +350,10 @@ public class DreamObject {
             default:
                 if (ObjectDefinition.ConstVariables is not null && ObjectDefinition.ConstVariables.Contains(varName))
                     throw new Exception($"Cannot set const var \"{varName}\" on {ObjectDefinition.Type}");
+                if (ObjectDefinition.GlobalVariables.TryGetValue(varName, out var globalIndex)) {
+                    DreamManager.SetGlobal(globalIndex, value);
+                    break;
+                }
                 if (!ObjectDefinition.Variables.ContainsKey(varName))
                     throw new Exception($"Cannot set var \"{varName}\" on {ObjectDefinition.Type}");
 
@@ -553,6 +661,10 @@ public class DreamObject {
         }
 
         throw new InvalidOperationException($"Cannot assign {value} to index {index} of {this}");
+    }
+
+    public bool TryOperatorStringify(DMProcState state, [MustDisposeResource] out DreamValue procResult) {
+        return TryExecuteOperatorOverload(state, "operator\"\"", new DreamProcArguments(), out procResult);
     }
 
     #endregion Operators

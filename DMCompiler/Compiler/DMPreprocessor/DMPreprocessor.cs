@@ -274,7 +274,8 @@ public sealed class DMPreprocessor(DMCompiler compiler, bool enableDirectives) :
         }
 
         DMPreprocessorLexer currentLexer = _lexerStack.Peek();
-        string file = Path.Combine(Path.GetDirectoryName(currentLexer.File.Replace('\\', Path.DirectorySeparatorChar)), includedFileToken.ValueAsString());
+        string currentDirectory = Path.GetDirectoryName(currentLexer.File.Replace('\\', Path.DirectorySeparatorChar)) ?? string.Empty;
+        string file = Path.Combine(currentDirectory, includedFileToken.ValueAsString());
         string? directory = currentLexer.IncludeDirectory;
 
         IncludeFile(directory, file, includeToken.Location.InDMStandard, includedFrom: includeToken.Location);

@@ -42,6 +42,9 @@ public class DreamObjectAtom(DreamObjectDefinition objectDefinition) : DreamObje
             case "loc":
                 value = DreamValue.Null;
                 return true;
+            case "pixloc":
+                value = CreatePixLoc();
+                return true;
             case "appearance":
                 var appearanceCopy = AtomManager.MustGetAppearance(this).ToMutable();
 
@@ -91,6 +94,9 @@ public class DreamObjectAtom(DreamObjectDefinition objectDefinition) : DreamObje
             case "z":
             case "loc":
                 break;
+            case "pixloc":
+                ApplyPixLoc(value);
+                break;
             case "appearance":
                 if (!AtomManager.TryCreateAppearanceFrom(value, out var newAppearance))
                     return; // Ignore attempts to set an invalid appearance
@@ -102,31 +108,11 @@ public class DreamObjectAtom(DreamObjectDefinition objectDefinition) : DreamObje
                 newAppearance.Dispose();
                 break;
             case "overlays": {
-                Overlays.Cut();
-
-                if (value.TryGetValueAsDreamList(out var valueList)) {
-                    // TODO: This should postpone UpdateAppearance until after everything is added
-                    foreach (DreamValue overlayValue in valueList.EnumerateValues()) {
-                        Overlays.AddValue(overlayValue);
-                    }
-                } else if (!value.IsNull) {
-                    Overlays.AddValue(value);
-                }
-
+                Overlays.ReplaceWith(value);
                 break;
             }
             case "underlays": {
-                Underlays.Cut();
-
-                if (value.TryGetValueAsDreamList(out var valueList)) {
-                    // TODO: This should postpone UpdateAppearance until after everything is added
-                    foreach (DreamValue underlayValue in valueList.EnumerateValues()) {
-                        Underlays.AddValue(underlayValue);
-                    }
-                } else if (!value.IsNull) {
-                    Underlays.AddValue(value);
-                }
-
+                Underlays.ReplaceWith(value);
                 break;
             }
             case "vis_contents": {
@@ -190,5 +176,24 @@ public class DreamObjectAtom(DreamObjectDefinition objectDefinition) : DreamObje
                 base.SetVar(varName, value);
                 break;
         }
+    }
+
+    protected virtual DreamValue CreatePixLoc() {
+        if (this is not DreamObjectTurf turf)
+            return DreamValue.Null;
+
+        var iconSize = DreamManager.WorldInstance.IconSize;
+        var pixLoc = ObjectTree.CreateObject(ObjectTree.PixLoc);
+
+        pixLoc.InitSpawn(new(
+            new((turf.X - 1) * iconSize + 1),
+            new((turf.Y - 1) * iconSize + 1),
+            new(turf.Z)));
+
+        return new(pixLoc);
+    }
+
+    protected virtual void ApplyPixLoc(DreamValue value) {
+        // Non-movable atoms cannot be repositioned through pixloc in BYOND.
     }
 }

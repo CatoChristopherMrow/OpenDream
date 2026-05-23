@@ -74,6 +74,7 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
     private bool _textureDirty = true;
     private bool _animationComplete;
     private IRenderTexture? _cachedTexture;
+    private TimeSpan _animationStartTime;
 
     public DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfaceManager interfaceManager, IGameTiming gameTiming, IClyde clyde, ClientAppearanceSystem appearanceSystem, uint appearanceId,
         AtomDirection? parentDir = null, string? parentIconState = null) : this(renderTargetPool, interfaceManager, gameTiming, clyde, appearanceSystem) {
@@ -147,15 +148,25 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
                 _direction = appearance.Direction;
             }
 
-            _iconState = appearance.IconState ?? parentIconState;
+            // BYOND only inherits an overlay's icon_state when it is also using
+            // the parent's icon. An appearance with its own icon but no
+            // icon_state should render that icon's default state instead of
+            // trying to use the parent's state.
+            _iconState = (appearance.Icon == null) ? appearance.IconState ?? parentIconState : appearance.IconState;
             Appearance = appearance;
         });
     }
 
     //three things to do here, chained animations, loops and parallel animations
-    public void StartAppearanceAnimation(ImmutableAppearance endingAppearance, TimeSpan duration, AnimationEasing easing, int loops, AnimationFlags flags, int delay, bool chainAnim) {
+    public void StartAppearanceAnimation(ImmutableAppearance endingAppearance, TimeSpan duration, AnimationEasing easing, int loops, AnimationFlags flags, int delay, bool chainAnim, string? tag, string? command, Action<string>? commandRunner) {
         _appearance = CalculateAnimatedAppearance(); //Animation starts from the current animated appearance
-        DateTime start = DateTime.Now;
+        if (tag != null) {
+            RemoveAppearanceAnimationsByTag(tag);
+            flags |= AnimationFlags.AnimationParallel;
+            chainAnim = true;
+        }
+
+        TimeSpan start = gameTiming.CurTime + TimeSpan.FromMilliseconds(delay * 100);
         if(!chainAnim)
             EndAppearanceAnimation(null);
         else
@@ -178,7 +189,15 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
                 break;
             }
 
-        _appearanceAnimations.Add(new AppearanceAnimation(start, duration, endingAppearance, easing, flags, delay, true));
+        _appearanceAnimations.Add(new AppearanceAnimation(start, duration, endingAppearance, easing, flags, delay, true, tag, command, commandRunner));
+    }
+
+    public void StopAppearanceAnimation(string? tag) {
+        if (tag == null)
+            return;
+
+        _appearance = CalculateAnimatedAppearance();
+        RemoveAppearanceAnimationsByTag(tag);
     }
 
     /// <summary>
@@ -199,6 +218,13 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
             _appearance = appearanceAnimation.Value.EndAppearance;
             _appearanceAnimations.Remove(appearanceAnimation.Value);
         }
+    }
+
+    private void RemoveAppearanceAnimationsByTag(string tag) {
+        if (_appearanceAnimations == null)
+            return;
+
+        _appearanceAnimations.RemoveAll(animation => animation.Tag == tag);
     }
 
     public void GetWorldAABB(Vector2 worldPos, ref Box2? aabb) {
@@ -233,13 +259,21 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
         if (frames.Length <= 1) return;
 
         var oldFrame = _animationFrame;
-        var currentGameTicks = gameTiming.CurTime.Ticks;
         var sequenceDuration = frames.Aggregate(TimeSpan.Zero, (duration, frame) => duration + frame.Delay);
-        var durationDiff = new TimeSpan(currentGameTicks % sequenceDuration.Ticks);
+        if (sequenceDuration.Ticks <= 0)
+            return;
+
+        var elapsed = gameTiming.CurTime - _animationStartTime;
+        if (elapsed < TimeSpan.Zero)
+            elapsed = TimeSpan.Zero;
+
+        var durationDiff = dmiState.Loop
+            ? new TimeSpan(elapsed.Ticks % sequenceDuration.Ticks)
+            : elapsed;
         var noLoop = !dmiState.Loop;
 
         _animationFrame = 0;
-        while (durationDiff >= frames[_animationFrame].Delay) {
+        while (durationDiff >= frames[_animationFrame].Delay && frames[_animationFrame].Delay.Ticks > 0) {
             durationDiff -= frames[_animationFrame].Delay;
 
             _animationFrame++;
@@ -271,7 +305,8 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
             if((animation.Flags & AnimationFlags.AnimationParallel) == 0 && i != 0)
                 break;
 
-            float timeFactor = Math.Clamp((float)(DateTime.Now - animation.Start).Ticks / animation.Duration.Ticks, 0.0f, 1.0f);
+            var animationDurationTicks = Math.Max(animation.Duration.Ticks, 1);
+            float timeFactor = Math.Clamp((float)(gameTiming.CurTime - animation.Start).Ticks / animationDurationTicks, 0.0f, 1.0f);
             float factor = 0;
             if((animation.Easing & AnimationEasing.EaseIn) != 0)
                 timeFactor /= 2.0f;
@@ -437,18 +472,21 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
             }
 
             if (timeFactor >= 1f) {
+                if (animation.Command != null)
+                    animation.CommandRunner?.Invoke(animation.Command);
+
                 toRemove ??= new();
                 toRemove.Add(animation);
                 if (_appearanceAnimationsLoops != 0) { //add it back to the list with the times updated
                     if(_appearanceAnimationsLoops != -1 && animation.LastInSequence)
                         _appearanceAnimationsLoops -= 1;
                     toReAdd ??= new();
-                    DateTime start;
+                    TimeSpan start;
                     if((animation.Flags & AnimationFlags.AnimationParallel) != 0)
                         start = _appearanceAnimations[^1].Start; //either that's also a parallel, or its one that this should be parallel with
                     else
                         start = _appearanceAnimations[^1].Start + _appearanceAnimations[^1].Duration; //if it's not parallel, it's chained
-                    AppearanceAnimation repeatAnimation = new AppearanceAnimation(start, animation.Duration, animation.EndAppearance, animation.Easing, animation.Flags, animation.Delay, animation.LastInSequence);
+                    AppearanceAnimation repeatAnimation = new AppearanceAnimation(start, animation.Duration, animation.EndAppearance, animation.Easing, animation.Flags, animation.Delay, animation.LastInSequence, animation.Tag, animation.Command, animation.CommandRunner);
                     toReAdd.Add(repeatAnimation);
                 }
             }
@@ -484,6 +522,7 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
                 DMI = dmi;
                 _animationFrame = 0;
                 _animationComplete = false;
+                _animationStartTime = gameTiming.CurTime;
             });
         }
 
@@ -585,13 +624,48 @@ internal sealed class DreamIcon(RenderTargetPool renderTargetPool, IDreamInterfa
         CachedTexture = null;
     }
 
-    private struct AppearanceAnimation(DateTime start, TimeSpan duration, ImmutableAppearance endAppearance, AnimationEasing easing, AnimationFlags flags, int delay, bool lastInSequence) {
-        public readonly DateTime Start = start;
+    private struct AppearanceAnimation(TimeSpan start, TimeSpan duration, ImmutableAppearance endAppearance, AnimationEasing easing, AnimationFlags flags, int delay, bool lastInSequence, string? tag, string? command, Action<string>? commandRunner) : IEquatable<AppearanceAnimation> {
+        public readonly TimeSpan Start = start;
         public readonly TimeSpan Duration = duration;
         public readonly ImmutableAppearance EndAppearance = endAppearance;
         public readonly AnimationEasing Easing = easing;
         public readonly AnimationFlags Flags = flags;
         public readonly int Delay = delay;
         public bool LastInSequence = lastInSequence;
+        public readonly string? Tag = tag;
+        public readonly string? Command = command;
+        public readonly Action<string>? CommandRunner = commandRunner;
+
+        public bool Equals(AppearanceAnimation other) {
+            return Start == other.Start &&
+                Duration == other.Duration &&
+                EqualityComparer<ImmutableAppearance>.Default.Equals(EndAppearance, other.EndAppearance) &&
+                Easing == other.Easing &&
+                Flags == other.Flags &&
+                Delay == other.Delay &&
+                LastInSequence == other.LastInSequence &&
+                Tag == other.Tag &&
+                Command == other.Command &&
+                ReferenceEquals(CommandRunner, other.CommandRunner);
+        }
+
+        public override bool Equals(object? obj) {
+            return obj is AppearanceAnimation other && Equals(other);
+        }
+
+        public override int GetHashCode() {
+            HashCode hash = new();
+            hash.Add(Start);
+            hash.Add(Duration);
+            hash.Add(EndAppearance);
+            hash.Add(Easing);
+            hash.Add(Flags);
+            hash.Add(Delay);
+            hash.Add(LastInSequence);
+            hash.Add(Tag);
+            hash.Add(Command);
+            hash.Add(CommandRunner);
+            return hash.ToHashCode();
+        }
     }
 }

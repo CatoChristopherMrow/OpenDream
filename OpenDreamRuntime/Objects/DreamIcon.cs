@@ -95,7 +95,7 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
     /// <summary>
     /// Generate a DMI using all the inserted icon states
     /// </summary>
-    /// <remarks>The resulting DMI will consist of one long flat row of frames</remarks>
+    /// <remarks>The resulting DMI will be packed into a BYOND-style near-square atlas</remarks>
     /// <returns>The DreamResource containing the DMI and the ParsedDMIDescription used to construct it</returns>
     /// <exception cref="NotImplementedException">Using icon states of various sizes is unimplemented</exception>
     public IconResource GenerateDMI() {
@@ -116,13 +116,17 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
         ParsedDMIDescription newDescription = new() {Width = frameWidth, Height = frameHeight};
         newDescription.States.EnsureCapacity(States.Count);
 
-        int span = frameWidth * Math.Max(frameCount, 1);
-        Rgba32[] pixels = PixelArrayPool.Rent(span * frameHeight);
+        int frameColumns = Math.Max((int)Math.Ceiling(Math.Sqrt(frameCount)), 1);
+        int frameRows = Math.Max((int)Math.Ceiling(frameCount / (double)frameColumns), 1);
+        int span = frameWidth * frameColumns;
+        int imageHeight = frameHeight * frameRows;
+        Rgba32[] pixels = PixelArrayPool.Rent(span * imageHeight);
+        Array.Clear(pixels, 0, span * imageHeight);
 
         int currentFrame = 0;
         foreach (var iconStatePair in States) {
             var iconState = iconStatePair.Value;
-            ParsedDMIState newState = new(iconStatePair.Key) { Loop = false, Rewind = false };
+            ParsedDMIState newState = new(iconStatePair.Key) { Rewind = false };
 
             newDescription.States.Add(newState.Name, newState);
 
@@ -135,17 +139,22 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
                 if (!iconState.Directions.TryGetValue(direction, out var frames))
                     continue; // Blank frames
 
-                var newFrames = DrawFrames(pixels, firstFrame, frames, direction);
+                var newFrames = DrawFrames(pixels, firstFrame, frames, direction, span, frameColumns);
                 newState.Directions.Add(direction, newFrames);
             }
         }
 
-        Image<Rgba32> dmiImage = Image.LoadPixelData<Rgba32>(pixels, span, frameHeight);
+        for (var i = 0; i < span * imageHeight; i++) {
+            if (pixels[i].A == 0)
+                pixels[i] = new Rgba32(192, 192, 192, 0);
+        }
+
+        Image<Rgba32> dmiImage = Image.LoadPixelData<Rgba32>(pixels, span, imageHeight);
 
         PixelArrayPool.Return(pixels, clearArray: true);
 
         using var dmiImageStream = new MemoryStream();
-        var pngTextData = new PngTextData("Description", newDescription.ExportAsText(), null, null);
+        var pngTextData = new PngTextData("Description", newDescription.ExportAsText(), string.Empty, string.Empty);
         var pngMetadata = dmiImage.Metadata.GetPngMetadata();
         pngMetadata.TextData.Add(pngTextData);
 
@@ -164,8 +173,241 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
         _cachedDMI = null;
     }
 
+    public void MutateFrames(Action<Image<Rgba32>> mutate) {
+        TransformFrames(frameImage => {
+            mutate(frameImage);
+            return frameImage;
+        });
+    }
+
+    public void Crop(int x1, int y1, int x2, int y2) {
+        int cropWidth = Math.Max(1, Math.Abs(x2 - x1) + 1);
+        int cropHeight = Math.Max(1, Math.Abs(y2 - y1) + 1);
+        int left = Math.Min(x1, x2) - 1;
+        int bottom = Math.Min(y1, y2) - 1;
+
+        TransformFrames(frameImage => {
+            Image<Rgba32> cropped = new(cropWidth, cropHeight);
+
+            for (int y = 0; y < cropHeight; y++) {
+                int sourceY = frameImage.Height - 1 - (bottom + y);
+                if (sourceY < 0 || sourceY >= frameImage.Height)
+                    continue;
+
+                for (int x = 0; x < cropWidth; x++) {
+                    int sourceX = left + x;
+                    if (sourceX >= 0 && sourceX < frameImage.Width)
+                        cropped[x, cropHeight - 1 - y] = frameImage[sourceX, sourceY];
+                }
+            }
+
+            frameImage.Dispose();
+            return cropped;
+        }, cropWidth, cropHeight);
+    }
+
+    public void Shift(AtomDirection dir, int offset, bool wrap) {
+        if (offset == 0)
+            return;
+
+        TransformFrames(frameImage => {
+            Image<Rgba32> shifted = new(frameImage.Width, frameImage.Height);
+            int dx = 0, dy = 0;
+
+            if ((dir & AtomDirection.East) != 0)
+                dx += offset;
+            if ((dir & AtomDirection.West) != 0)
+                dx -= offset;
+            if ((dir & AtomDirection.North) != 0)
+                dy -= offset;
+            if ((dir & AtomDirection.South) != 0)
+                dy += offset;
+
+            for (int y = 0; y < frameImage.Height; y++) {
+                for (int x = 0; x < frameImage.Width; x++) {
+                    int targetX = x + dx;
+                    int targetY = y + dy;
+
+                    if (wrap) {
+                        targetX = Mod(targetX, frameImage.Width);
+                        targetY = Mod(targetY, frameImage.Height);
+                    } else if (targetX < 0 || targetX >= frameImage.Width || targetY < 0 || targetY >= frameImage.Height) {
+                        continue;
+                    }
+
+                    shifted[targetX, targetY] = frameImage[x, y];
+                }
+            }
+
+            frameImage.Dispose();
+            return shifted;
+        });
+    }
+
+    public void DrawBox(Rgba32 color, int x1, int y1, int x2, int y2) {
+        int left = Math.Min(x1, x2) - 1;
+        int right = Math.Max(x1, x2) - 1;
+        int bottom = Math.Min(y1, y2) - 1;
+        int top = Math.Max(y1, y2) - 1;
+
+        MutateFrames(frameImage => {
+            frameImage.ProcessPixelRows(accessor => {
+                for (int y = bottom; y <= top; y++) {
+                    int imageY = frameImage.Height - 1 - y;
+                    if (imageY < 0 || imageY >= frameImage.Height)
+                        continue;
+
+                    var row = accessor.GetRowSpan(imageY);
+                    for (int x = left; x <= right; x++) {
+                        if (x >= 0 && x < frameImage.Width)
+                            row[x] = color;
+                    }
+                }
+            });
+        });
+    }
+
+    public void SwapColor(Rgba32 oldColor, Rgba32 newColor) {
+        MutateFrames(frameImage => {
+            frameImage.ProcessPixelRows(accessor => {
+                for (int y = 0; y < frameImage.Height; y++) {
+                    var row = accessor.GetRowSpan(y);
+                    for (int x = 0; x < frameImage.Width; x++) {
+                        if (row[x].Equals(oldColor))
+                            row[x] = newColor;
+                    }
+                }
+            });
+        });
+    }
+
+    public void SetIntensity(float r, float g, float b) {
+        MutateFrames(frameImage => {
+            frameImage.ProcessPixelRows(accessor => {
+                for (int y = 0; y < frameImage.Height; y++) {
+                    var row = accessor.GetRowSpan(y);
+                    for (int x = 0; x < frameImage.Width; x++) {
+                        ref Rgba32 pixel = ref row[x];
+                        pixel.R = MultiplyChannel(pixel.R, r);
+                        pixel.G = MultiplyChannel(pixel.G, g);
+                        pixel.B = MultiplyChannel(pixel.B, b);
+                    }
+                }
+            });
+        });
+    }
+
+    public void MapColors(Dictionary<Rgba32, Rgba32> colorMap) {
+        if (colorMap.Count == 0)
+            return;
+
+        MutateFrames(frameImage => {
+            frameImage.ProcessPixelRows(accessor => {
+                for (int y = 0; y < frameImage.Height; y++) {
+                    var row = accessor.GetRowSpan(y);
+                    for (int x = 0; x < frameImage.Width; x++) {
+                        if (colorMap.TryGetValue(row[x], out var replacement))
+                            row[x] = replacement;
+                    }
+                }
+            });
+        });
+    }
+
+    public DreamValue GetPixel(int x, int y, DreamValue stateArg, DreamValue dirArg, DreamValue frameArg) {
+        if (x < 1 || y < 1)
+            return DreamValue.Null;
+
+        var resource = GenerateDMI();
+        string? stateName = null;
+        if (stateArg.TryGetValueAsString(out var state))
+            stateName = state;
+
+        AtomDirection dir = AtomDirection.South;
+        if (dirArg.TryGetValueAsInteger(out var dirInt) && Enum.IsDefined((AtomDirection)dirInt))
+            dir = (AtomDirection)dirInt;
+
+        int frameIndex = 0;
+        if (frameArg.TryGetValueAsInteger(out var frameInt) && frameInt > 0)
+            frameIndex = frameInt - 1;
+
+        var dmiState = resource.DMI.GetStateOrDefault(stateName);
+        if (dmiState == null)
+            return DreamValue.Null;
+
+        var frames = dmiState.GetFrames(dir);
+        if (frames.Length <= frameIndex)
+            return DreamValue.Null;
+
+        var frame = frames[frameIndex];
+        int pixelX = frame.X + x - 1;
+        int pixelY = frame.Y + Height - y;
+        if (pixelX < 0 || pixelX >= resource.Texture.Width || pixelY < 0 || pixelY >= resource.Texture.Height)
+            return DreamValue.Null;
+
+        Rgba32 pixel = resource.Texture[pixelX, pixelY];
+        if (pixel.A == 0)
+            return DreamValue.Null;
+
+        return new DreamValue(pixel.A == byte.MaxValue
+            ? $"#{pixel.R:x2}{pixel.G:x2}{pixel.B:x2}"
+            : $"#{pixel.R:x2}{pixel.G:x2}{pixel.B:x2}{pixel.A:x2}");
+    }
+
+    private void TransformFrames(Func<Image<Rgba32>, Image<Rgba32>> transform, int? newWidth = null, int? newHeight = null) {
+        var resource = GenerateDMI();
+        int transformedWidth = newWidth ?? Width;
+        int transformedHeight = newHeight ?? Height;
+        Dictionary<string, IconState> transformedStates = new(States.Count);
+
+        foreach (var statePair in States) {
+            IconState transformedState = new() { Frames = statePair.Value.Frames };
+            transformedStates.Add(statePair.Key, transformedState);
+
+            var generatedState = resource.DMI.GetStateOrDefault(statePair.Key);
+
+            foreach (var directionPair in statePair.Value.Directions) {
+                List<IconFrame> transformedFrames = new(directionPair.Value.Count);
+                var generatedFrames = generatedState?.GetFrames(directionPair.Key) ?? Array.Empty<ParsedDMIFrame>();
+
+                for (int i = 0; i < directionPair.Value.Count; i++) {
+                    if (generatedFrames.Length <= i)
+                        continue;
+
+                    var generatedFrame = generatedFrames[i];
+                    Image<Rgba32> frameImage = resource.Texture.Clone(context => {
+                        context.Crop(new Rectangle(generatedFrame.X, generatedFrame.Y, Width, Height));
+                    });
+
+                    Image<Rgba32> transformedImage = transform(frameImage);
+                    transformedFrames.Add(new(transformedImage, new ParsedDMIFrame { Delay = generatedFrame.Delay }, transformedWidth, transformedHeight));
+                }
+
+                transformedState.Directions.Add(directionPair.Key, transformedFrames);
+            }
+        }
+
+        States.Clear();
+        foreach (var statePair in transformedStates)
+            States.Add(statePair.Key, statePair.Value);
+
+        Width = transformedWidth;
+        Height = transformedHeight;
+        _operations.Clear();
+        _cachedDMI = null;
+    }
+
+    private static int Mod(int value, int divisor) {
+        int result = value % divisor;
+        return result < 0 ? result + divisor : result;
+    }
+
+    private static byte MultiplyChannel(byte channel, float multiplier) {
+        return (byte)Math.Clamp(Math.Round(channel * multiplier), byte.MinValue, byte.MaxValue);
+    }
+
     public void InsertStates(IconResource icon, DreamValue state, DreamValue dir, DreamValue frame,
-        bool isConstructor = false) {
+        bool isConstructor = false, bool useDefaultStateAsSource = false) {
         bool copyingAllDirs = !dir.TryGetValueAsInteger(out var dirVal);
         bool copyingAllStates = !state.TryGetValueAsString(out var copyingState);
         bool copyingAllFrames = !frame.TryGetValueAsInteger(out var copyingFrame);
@@ -187,7 +429,16 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
                     forceSouth: false);
             }
         } else {
-            InsertState(icon, isConstructor ? string.Empty : copyingState!, copyingState!,
+            var sourceState = copyingState!;
+            if (useDefaultStateAsSource && !icon.DMI.States.ContainsKey(copyingState!)) {
+                if (icon.DMI.States.ContainsKey(string.Empty)) {
+                    sourceState = string.Empty;
+                } else if (icon.DMI.States.Count == 1) {
+                    sourceState = icon.DMI.States.Keys.Single();
+                }
+            }
+
+            InsertState(icon, isConstructor ? string.Empty : copyingState!, sourceState,
                 copyingAllDirs ? null : copyingDirection, copyingAllFrames ? null : copyingFrame,
                 forceSouth: isConstructor);
         }
@@ -227,15 +478,16 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
         _cachedDMI = null;
     }
 
-    private ParsedDMIFrame[] DrawFrames(Rgba32[] pixels, int firstFrameIndex, List<IconFrame> frames, AtomDirection dir) {
+    private ParsedDMIFrame[] DrawFrames(Rgba32[] pixels, int firstFrameIndex, List<IconFrame> frames, AtomDirection dir, int imageSpan, int frameColumns) {
         ParsedDMIFrame[] newFrames = new ParsedDMIFrame[frames.Count];
-        int x = firstFrameIndex * Width;
-        int imageSpan = FrameCount * Width;
 
         for (var frameIndex = 0; frameIndex < frames.Count; frameIndex++) {
             var frame = frames[frameIndex];
+            int atlasFrame = firstFrameIndex + frameIndex;
+            int x = atlasFrame % frameColumns * Width;
+            int y = atlasFrame / frameColumns * Height;
 
-            newFrames[frameIndex] = new ParsedDMIFrame {X = x, Y = 0, Delay = frame.DMIFrame.Delay};
+            newFrames[frameIndex] = new ParsedDMIFrame {X = x, Y = y, Delay = frame.DMIFrame.Delay};
             if (frameIndex > frames.Count)
                 continue; // Empty frame
 
@@ -261,7 +513,7 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
                         var rowSpan = accessor.GetRowSpan(srcFrameY + y);
 
                         for (int frameX = 0; frameX < Width; frameX++) {
-                            int pixelLocation = (y * imageSpan) + x + frameX;
+                            int pixelLocation = ((newFrames[frameIndex].Y + y) * imageSpan) + x + frameX;
 
                             pixels[pixelLocation] = rowSpan[srcFrameX + frameX];
                         }
@@ -273,11 +525,9 @@ public sealed class DreamIcon(DreamManager dreamManager, DreamResourceManager re
                 if (operation.AppliedFrames <= firstFrameIndex + frameIndex)
                     break; // operation.AppliedFrames should be in ascending order; we can quit now
 
-                var bounds = UIBox2i.FromDimensions(x, 0, Width, Height);
+                var bounds = UIBox2i.FromDimensions(x, y, Width, Height);
                 operation.Operation.ApplyToFrame(pixels, imageSpan, frameIndex, dir, bounds);
             }
-
-            x += Width;
         }
 
         return newFrames;
@@ -383,6 +633,7 @@ public class DreamIconOperationBlend : IDreamIconOperation {
 public sealed class DreamIconOperationBlendImage : DreamIconOperationBlend {
     private readonly Image<Rgba32> _blending;
     private readonly ParsedDMIState? _blendingState;
+    private readonly int _blendingWidth, _blendingHeight;
 
     public DreamIconOperationBlendImage(BlendType type, int xOffset, int yOffset, DreamValue blending) : base(type, xOffset, yOffset) {
         //TODO: Find a way to get rid of this!
@@ -394,6 +645,8 @@ public sealed class DreamIconOperationBlendImage : DreamIconOperationBlend {
 
         _blending = blendingIcon.Texture;
         _blendingState = blendingIcon.DMI.States.Values.FirstOrDefault();
+        _blendingWidth = blendingIcon.DMI.Width;
+        _blendingHeight = blendingIcon.DMI.Height;
     }
 
     public override void OnApply(DreamIcon icon) {
@@ -428,10 +681,17 @@ public sealed class DreamIconOperationBlendImage : DreamIconOperationBlend {
 
         var blendingFrame = blendingDirFrames[frame];
 
-        // Use the smaller of the two sizes if they're different
+        // Use the smaller of the two frame sizes if they're different
         // TODO: 1,1 should be bottom left, not top left
-        bounds = UIBox2i.FromDimensions(bounds.Left, bounds.Top, Math.Min(_blending.Width, bounds.Width),
-            Math.Min(_blending.Height, bounds.Height));
+        int blendWidth = Math.Min(bounds.Width, _blendingWidth);
+        int blendHeight = Math.Min(bounds.Height, _blendingHeight);
+
+        blendWidth = Math.Min(blendWidth, _blending.Width - blendingFrame.X);
+        blendHeight = Math.Min(blendHeight, _blending.Height - blendingFrame.Y);
+        if (blendWidth <= 0 || blendHeight <= 0)
+            return;
+
+        bounds = UIBox2i.FromDimensions(bounds.Left, bounds.Top, blendWidth, blendHeight);
 
         _blending.ProcessPixelRows(accessor => {
             // TODO: x & y offsets

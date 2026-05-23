@@ -273,9 +273,17 @@ internal sealed class DMProcBuilder(DMCompiler compiler, DMObject dmObject, DMPr
 
                 DMASTExpression outputExpr;
                 if (statementFor.Expression1 is DMASTVarDeclExpression decl) {
-                    outputExpr = new DMASTIdentifier(decl.Location, decl.DeclPath.Path.LastElement!);
-                } else {
+                    if (decl.DeclPath.Path.LastElement is not { } declName) {
+                        compiler.Emit(WarningCode.BadExpression, decl.Location, "Invalid var declaration");
+                        return;
+                    }
+
+                    outputExpr = new DMASTIdentifier(decl.Location, declName);
+                } else if (statementFor.Expression1 != null) {
                     outputExpr = statementFor.Expression1;
+                } else {
+                    compiler.Emit(WarningCode.BadExpression, statementFor.Location, "Missing for-loop variable");
+                    return;
                 }
 
                 var keyVar = _exprBuilder.Create(outputExpr);
@@ -318,7 +326,12 @@ internal sealed class DMProcBuilder(DMCompiler compiler, DMObject dmObject, DMPr
                 switch (statementFor.Expression1) {
                     case DMASTAssign {LHS: DMASTVarDeclExpression decl, RHS: DMASTExpressionInRange range}: {
                         var initializer = statementFor.Expression1 != null ? _exprBuilder.Create(statementFor.Expression1) : null;
-                        var identifier = new DMASTIdentifier(decl.Location, decl.DeclPath.Path.LastElement);
+                        if (decl.DeclPath.Path.LastElement is not { } declName) {
+                            compiler.Emit(WarningCode.BadExpression, decl.Location, "Invalid var declaration");
+                            break;
+                        }
+
+                        var identifier = new DMASTIdentifier(decl.Location, declName);
                         var outputVar = _exprBuilder.Create(identifier);
 
                         var start = _exprBuilder.Create(range.StartRange);
@@ -338,7 +351,12 @@ internal sealed class DMProcBuilder(DMCompiler compiler, DMObject dmObject, DMPr
 
                         DMASTExpression outputExpr;
                         if (decl != null) {
-                            outputExpr = new DMASTIdentifier(exprRange.Value.Location, decl.DeclPath.Path.LastElement);
+                            if (decl.DeclPath.Path.LastElement is not { } declName) {
+                                compiler.Emit(WarningCode.BadExpression, decl.Location, "Invalid var declaration");
+                                break;
+                            }
+
+                            outputExpr = new DMASTIdentifier(exprRange.Value.Location, declName);
                         } else {
                             outputExpr = exprRange.Value;
                         }
@@ -370,7 +388,12 @@ internal sealed class DMProcBuilder(DMCompiler compiler, DMObject dmObject, DMPr
                     case DMASTExpressionIn exprIn: {
                         DMASTExpression outputExpr;
                         if (exprIn.LHS is DMASTVarDeclExpression decl) {
-                            outputExpr = new DMASTIdentifier(decl.Location, decl.DeclPath.Path.LastElement);
+                            if (decl.DeclPath.Path.LastElement is not { } declName) {
+                                compiler.Emit(WarningCode.BadExpression, decl.Location, "Invalid var declaration");
+                                break;
+                            }
+
+                            outputExpr = new DMASTIdentifier(decl.Location, declName);
                         } else {
                             outputExpr = exprIn.LHS;
                         }

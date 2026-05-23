@@ -218,6 +218,7 @@ public sealed class DMLexer : TokenLexer {
                             case "<": token = CreateToken(TokenType.DM_LessThan, c); break;
                             case "<<": token = CreateToken(TokenType.DM_LeftShift, c); break;
                             case "<=": token = CreateToken(TokenType.DM_LessThanEquals, c); break;
+                            case "<=>": token = CreateToken(TokenType.DM_LessThanEqualsGreaterThan, c); break;
                             case "<<=": token = CreateToken(TokenType.DM_LeftShiftEquals, c); break;
                             case ">": token = CreateToken(TokenType.DM_GreaterThan, c); break;
                             case ">>": token = CreateToken(TokenType.DM_RightShift, c); break;

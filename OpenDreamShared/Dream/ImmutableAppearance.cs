@@ -35,6 +35,7 @@ public sealed class ImmutableAppearance : IEquatable<ImmutableAppearance> {
     [ViewVariables] public readonly bool InheritsDirection = MutableAppearance.Default.InheritsDirection; // Inherits direction when used as an overlay
     [ViewVariables] public readonly Vector2i PixelOffset = MutableAppearance.Default.PixelOffset;  // pixel_x and pixel_y
     [ViewVariables] public readonly Vector2i PixelOffset2 = MutableAppearance.Default.PixelOffset2; // pixel_w and pixel_z
+    [ViewVariables] public readonly Vector2i IconOffset = MutableAppearance.Default.IconOffset;     // icon_w and icon_z
     [ViewVariables] public readonly Color Color = MutableAppearance.Default.Color;
     [ViewVariables] public readonly byte Alpha = MutableAppearance.Default.Alpha;
     [ViewVariables] public readonly float GlideSize = MutableAppearance.Default.GlideSize;
@@ -66,8 +67,12 @@ public sealed class ImmutableAppearance : IEquatable<ImmutableAppearance> {
     /// <summary> The Transform property of this appearance, in [a,d,b,e,c,f] order</summary>
     [ViewVariables] public readonly float[] Transform = MutableAppearance.Default.Transform;
 
-    // PixelOffset2 behaves the same as PixelOffset in top-down mode, so this is used
-    public Vector2i TotalPixelOffset => PixelOffset + PixelOffset2;
+    // PixelOffset2 behaves the same as PixelOffset in top-down mode. IconOffset applies only to this icon, not overlays.
+    public Vector2i TotalPixelOffset => GetTotalPixelOffset(MapFormat.TopDown);
+
+    public Vector2i GetTotalPixelOffset(MapFormat mapFormat) {
+        return AppearancePositioning.GetPixelOffset(this, mapFormat, Vector2i.Zero, Vector2i.Zero, false);
+    }
 
     [NonSerialized] private readonly SharedAppearanceSystem? _appearanceSystem;
     [NonSerialized] private bool _needsFinalizer;
@@ -86,6 +91,7 @@ public sealed class ImmutableAppearance : IEquatable<ImmutableAppearance> {
         InheritsDirection = appearance.InheritsDirection;
         PixelOffset = appearance.PixelOffset;
         PixelOffset2 = appearance.PixelOffset2;
+        IconOffset = appearance.IconOffset;
         Color = appearance.Color;
         Alpha = appearance.Alpha;
         GlideSize = appearance.GlideSize;
@@ -159,6 +165,7 @@ public sealed class ImmutableAppearance : IEquatable<ImmutableAppearance> {
         if (immutableAppearance.InheritsDirection != InheritsDirection) return false;
         if (immutableAppearance.PixelOffset != PixelOffset) return false;
         if (immutableAppearance.PixelOffset2 != PixelOffset2) return false;
+        if (immutableAppearance.IconOffset != IconOffset) return false;
         if (immutableAppearance.Color != Color) return false;
         if (immutableAppearance.Alpha != Alpha) return false;
         if (!immutableAppearance.GlideSize.Equals(GlideSize)) return false;
@@ -239,6 +246,7 @@ public sealed class ImmutableAppearance : IEquatable<ImmutableAppearance> {
         hashCode.Add(InheritsDirection);
         hashCode.Add(PixelOffset);
         hashCode.Add(PixelOffset2);
+        hashCode.Add(IconOffset);
         hashCode.Add(Color);
         hashCode.Add(ColorMatrix);
         hashCode.Add(Layer);
@@ -325,6 +333,9 @@ public sealed class ImmutableAppearance : IEquatable<ImmutableAppearance> {
                     break;
                 case IconAppearanceProperty.PixelOffset2:
                     PixelOffset2 = (buffer.ReadVariableInt32(), buffer.ReadVariableInt32());
+                    break;
+                case IconAppearanceProperty.IconOffset:
+                    IconOffset = (buffer.ReadVariableInt32(), buffer.ReadVariableInt32());
                     break;
                 case IconAppearanceProperty.Color:
                     Color = new Color(buffer.ReadByte(), buffer.ReadByte(), buffer.ReadByte(), buffer.ReadByte());
@@ -497,6 +508,7 @@ public sealed class ImmutableAppearance : IEquatable<ImmutableAppearance> {
         result.InheritsDirection = InheritsDirection;
         result.PixelOffset = PixelOffset;
         result.PixelOffset2 = PixelOffset2;
+        result.IconOffset = IconOffset;
         result.Color = Color;
         result.Alpha = Alpha;
         result.GlideSize = GlideSize;
@@ -580,6 +592,12 @@ public sealed class ImmutableAppearance : IEquatable<ImmutableAppearance> {
             buffer.Write((byte)IconAppearanceProperty.PixelOffset2);
             buffer.WriteVariableInt32(PixelOffset2.X);
             buffer.WriteVariableInt32(PixelOffset2.Y);
+        }
+
+        if (IconOffset != MutableAppearance.Default.IconOffset) {
+            buffer.Write((byte)IconAppearanceProperty.IconOffset);
+            buffer.WriteVariableInt32(IconOffset.X);
+            buffer.WriteVariableInt32(IconOffset.Y);
         }
 
         if (Color != MutableAppearance.Default.Color) {
@@ -763,4 +781,3 @@ public sealed class ImmutableAppearance : IEquatable<ImmutableAppearance> {
         throw new NotImplementedException();
     }
 }
-

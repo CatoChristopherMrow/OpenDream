@@ -1,9 +1,13 @@
-﻿using System.IO;
+﻿using System.Globalization;
+using System.IO;
 using System.Net;
 using System.Text;
+using System.Threading.Tasks;
 using System.Web;
 using OpenDreamShared.Interface.Descriptors;
 using OpenDreamClient.Resources;
+using OpenDreamClient.Resources.ResourceTypes;
+using OpenDreamShared.Dream;
 using OpenDreamShared.Network.Messages;
 using Robust.Client.Graphics;
 using Robust.Client.UserInterface;
@@ -17,6 +21,464 @@ using Robust.Shared.Utility;
 namespace OpenDreamClient.Interface.Controls;
 
 internal sealed partial class ControlBrowser : InterfaceControl {
+    private const string BrowserStorageShim = """
+        <script>
+        (function() {
+            if (window.__opendreamStorageShim)
+                return;
+
+            window.__opendreamStorageShim = true;
+
+            function key(name) {
+                return "opendream:byondstorage:" + String(name);
+            }
+
+            function notifyUpdated() {
+                if (typeof Event === "function") {
+                    document.dispatchEvent(new Event("byondstorageupdated"));
+                    return;
+                }
+
+                var event = document.createEvent("Event");
+                event.initEvent("byondstorageupdated", false, false);
+                document.dispatchEvent(event);
+            }
+
+            window.hubStorage = {
+                getItem: function(name) {
+                    try {
+                        return Promise.resolve(window.localStorage.getItem(key(name)));
+                    } catch (err) {
+                        return Promise.resolve(null);
+                    }
+                },
+                setItem: function(name, value) {
+                    try {
+                        window.localStorage.setItem(key(name), String(value));
+                    } finally {
+                        notifyUpdated();
+                    }
+
+                    return Promise.resolve();
+                },
+                removeItem: function(name) {
+                    try {
+                        window.localStorage.removeItem(key(name));
+                    } finally {
+                        notifyUpdated();
+                    }
+
+                    return Promise.resolve();
+                },
+                clear: function() {
+                    try {
+                        var prefix = key("");
+                        for (var i = window.localStorage.length - 1; i >= 0; i--) {
+                            var storageKey = window.localStorage.key(i);
+                            if (storageKey && storageKey.indexOf(prefix) === 0)
+                                window.localStorage.removeItem(storageKey);
+                        }
+                    } finally {
+                        notifyUpdated();
+                    }
+
+                    return Promise.resolve();
+                }
+            };
+
+            notifyUpdated();
+        })();
+        </script>
+        """;
+
+    private const string BrowserGeometryShimTemplate = """
+        <script>
+        (function() {
+            if (window.__opendreamGeometryShim)
+                return;
+
+            var geometry = { x: __OPENDREAM_GEOMETRY_X__, y: __OPENDREAM_GEOMETRY_Y__ };
+
+            window.__opendreamGeometryShim = {
+                set: function(x, y) {
+                    geometry.x = Number(x) || 0;
+                    geometry.y = Number(y) || 0;
+                }
+            };
+
+            function defineWindowNumber(name, getter) {
+                try {
+                    Object.defineProperty(window, name, {
+                        configurable: true,
+                        get: getter
+                    });
+                } catch (err) {
+                }
+            }
+
+            defineWindowNumber("screenLeft", function() { return geometry.x; });
+            defineWindowNumber("screenTop", function() { return geometry.y; });
+            defineWindowNumber("screenX", function() { return geometry.x; });
+            defineWindowNumber("screenY", function() { return geometry.y; });
+
+            try {
+                Object.defineProperty(MouseEvent.prototype, "screenX", {
+                    configurable: true,
+                    get: function() { return geometry.x + this.clientX; }
+                });
+                Object.defineProperty(MouseEvent.prototype, "screenY", {
+                    configurable: true,
+                    get: function() { return geometry.y + this.clientY; }
+                });
+            } catch (err) {
+            }
+
+            var nativeControls = {};
+            var nativeControlFrame;
+            var originalWinset;
+            var originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+            var lastMeasuredElement;
+            var lastMeasuredElementTime = 0;
+            var nativeControlMaintenanceTimer;
+            window.__opendreamNativeControls = nativeControls;
+
+            Element.prototype.getBoundingClientRect = function() {
+                var rect = originalGetBoundingClientRect.apply(this, arguments);
+                lastMeasuredElement = this;
+                lastMeasuredElementTime = performance.now();
+                return rect;
+            };
+
+            function parsePair(value, separator) {
+                if (typeof value !== "string")
+                    return null;
+
+                var parts = value.split(separator);
+                if (parts.length !== 2)
+                    return null;
+
+                return {
+                    x: Number(parts[0]) || 0,
+                    y: Number(parts[1]) || 0
+                };
+            }
+
+            function updateOwnGeometry(id, params) {
+                if (id !== Byond.windowId || !params || typeof params !== "object" || !params.pos)
+                    return;
+
+                var position = parsePair(params.pos, ",");
+                if (!position)
+                    return;
+
+                window.__opendreamGeometryShim.set(position.x, position.y);
+            }
+
+            function copyParams(params) {
+                var copy = {};
+                for (var key in params) {
+                    if (Object.prototype.hasOwnProperty.call(params, key))
+                        copy[key] = params[key];
+                }
+
+                return copy;
+            }
+
+            function makeParamsKey(params) {
+                return [
+                    params.parent || "",
+                    params.id || "",
+                    params.type || "",
+                    params.pos || "",
+                    params.size || "",
+                    params["opendream-clip-offset"] || "",
+                    params["opendream-full-size"] || ""
+                ].join("|");
+            }
+
+            function sendNativeControlWinset(id, params, entry) {
+                if (entry) {
+                    var key = makeParamsKey(params);
+                    if (entry.lastSentKey === key)
+                        return;
+
+                    entry.lastSentKey = key;
+                }
+
+                originalWinset.call(Byond, id, params);
+            }
+
+            function observeNativeControlElement(entry, element) {
+                if (entry.element === element)
+                    return;
+
+                if (entry.resizeObserver) {
+                    entry.resizeObserver.disconnect();
+                    entry.resizeObserver = null;
+                }
+
+                entry.element = element;
+                if (window.ResizeObserver) {
+                    entry.resizeObserver = new ResizeObserver(scheduleNativeControlUpdate);
+                    entry.resizeObserver.observe(element);
+                }
+            }
+
+            function hasNativeControls() {
+                for (var id in nativeControls) {
+                    if (Object.prototype.hasOwnProperty.call(nativeControls, id))
+                        return true;
+                }
+
+                return false;
+            }
+
+            function ensureNativeControlMaintenance() {
+                if (nativeControlMaintenanceTimer)
+                    return;
+
+                nativeControlMaintenanceTimer = setInterval(function() {
+                    if (!hasNativeControls()) {
+                        clearInterval(nativeControlMaintenanceTimer);
+                        nativeControlMaintenanceTimer = null;
+                        return;
+                    }
+
+                    scheduleNativeControlUpdate();
+                }, 125);
+            }
+
+            function intersectRects(a, b) {
+                var left = Math.max(a.left, b.left);
+                var top = Math.max(a.top, b.top);
+                var right = Math.min(a.right, b.right);
+                var bottom = Math.min(a.bottom, b.bottom);
+
+                return {
+                    left: left,
+                    top: top,
+                    right: right,
+                    bottom: bottom,
+                    width: Math.max(0, right - left),
+                    height: Math.max(0, bottom - top)
+                };
+            }
+
+            function getVisibleRect(element, rect) {
+                var visible = {
+                    left: rect.left,
+                    top: rect.top,
+                    right: rect.right,
+                    bottom: rect.bottom,
+                    width: rect.right - rect.left,
+                    height: rect.bottom - rect.top
+                };
+
+                for (var parent = element.parentElement; parent; parent = parent.parentElement) {
+                    var style = window.getComputedStyle(parent);
+                    var overflow = style.overflow + style.overflowX + style.overflowY;
+                    if (overflow.indexOf("hidden") !== -1 ||
+                            overflow.indexOf("auto") !== -1 ||
+                            overflow.indexOf("scroll") !== -1 ||
+                            overflow.indexOf("overlay") !== -1 ||
+                            overflow.indexOf("clip") !== -1) {
+                        visible = intersectRects(visible, originalGetBoundingClientRect.call(parent));
+                    }
+                }
+
+                visible = intersectRects(visible, {
+                    left: 0,
+                    top: 0,
+                    right: window.innerWidth,
+                    bottom: window.innerHeight
+                });
+
+                return visible;
+            }
+
+            function findElementForNativeControl(params) {
+                var position = parsePair(params.pos, ",");
+                var size = parsePair(params.size, "x");
+                if (!position || !size)
+                    return null;
+
+                var scale = window.devicePixelRatio || 1;
+                var expectedLeft = position.x / scale;
+                var expectedTop = position.y / scale;
+                var expectedWidth = size.x / scale;
+                var expectedHeight = size.y / scale;
+                var best = null;
+                var bestScore = 8;
+                var elements = document.body ? document.body.getElementsByTagName("div") : [];
+
+                for (var i = 0; i < elements.length; i++) {
+                    var element = elements[i];
+                    var rect = originalGetBoundingClientRect.call(element);
+                    var width = rect.right - rect.left;
+                    var height = rect.bottom - rect.top;
+                    if (width <= 0 || height <= 0)
+                        continue;
+
+                    var score = Math.abs(rect.left - expectedLeft) +
+                        Math.abs(rect.top - expectedTop) +
+                        Math.abs(width - expectedWidth) +
+                        Math.abs(height - expectedHeight);
+
+                    if (score < bestScore) {
+                        best = element;
+                        bestScore = score;
+                    }
+                }
+
+                return best;
+            }
+
+            function updateNativeControl(id, entry) {
+                if (!originalWinset)
+                    return;
+
+                var element = entry.element;
+                if (!element || !document.body || !document.body.contains(element)) {
+                    element = findElementForNativeControl(entry.params);
+                    if (element)
+                        observeNativeControlElement(entry, element);
+                }
+
+                if (!element) {
+                    sendNativeControlWinset(id, entry.params, entry);
+                    return;
+                }
+
+                var scale = window.devicePixelRatio || 1;
+                var rect = originalGetBoundingClientRect.call(element);
+                var visible = getVisibleRect(element, rect);
+                var params = copyParams(entry.params);
+
+                if (visible.width <= 0 || visible.height <= 0) {
+                    entry.lastRect = {
+                        left: rect.left,
+                        top: rect.top,
+                        right: rect.right,
+                        bottom: rect.bottom,
+                        width: rect.right - rect.left,
+                        height: rect.bottom - rect.top
+                    };
+                    entry.lastVisible = visible;
+                    entry.lastSentParams = { parent: "" };
+                    sendNativeControlWinset(id, { parent: "" }, entry);
+                    return;
+                }
+
+                params.pos = Math.round(visible.left * scale) + "," + Math.round(visible.top * scale);
+                params.size = Math.round(visible.width * scale) + "x" + Math.round(visible.height * scale);
+                params["opendream-clip-offset"] = Math.round((visible.left - rect.left) * scale) + "," + Math.round((visible.top - rect.top) * scale);
+                params["opendream-full-size"] = Math.round((rect.right - rect.left) * scale) + "x" + Math.round((rect.bottom - rect.top) * scale);
+
+                entry.lastRect = {
+                    left: rect.left,
+                    top: rect.top,
+                    right: rect.right,
+                    bottom: rect.bottom,
+                    width: rect.right - rect.left,
+                    height: rect.bottom - rect.top
+                };
+                entry.lastVisible = visible;
+                entry.lastSentParams = copyParams(params);
+                entry.lastElementTag = element.tagName;
+                entry.lastElementClass = element.className || "";
+
+                sendNativeControlWinset(id, params, entry);
+            }
+
+            function removeNativeControl(id) {
+                var entry = nativeControls[id];
+                if (!entry) {
+                    originalWinset.call(Byond, id, { parent: "" });
+                    return;
+                }
+
+                requestAnimationFrame(function() {
+                    var current = nativeControls[id];
+                    var element = current && current.element;
+                    if (element && document.body && document.body.contains(element)) {
+                        updateNativeControl(id, current);
+                        return;
+                    }
+
+                    if (current && current.resizeObserver)
+                        current.resizeObserver.disconnect();
+
+                    delete nativeControls[id];
+                    originalWinset.call(Byond, id, { parent: "" });
+                });
+            }
+
+            function scheduleNativeControlUpdate() {
+                if (nativeControlFrame)
+                    return;
+
+                nativeControlFrame = requestAnimationFrame(function() {
+                    nativeControlFrame = null;
+                    updateNativeControls();
+                });
+            }
+
+            function updateNativeControls() {
+                for (var id in nativeControls) {
+                    if (Object.prototype.hasOwnProperty.call(nativeControls, id))
+                        updateNativeControl(id, nativeControls[id]);
+                }
+            }
+
+            function updateNativeControlsForScroll() {
+                scheduleNativeControlUpdate();
+            }
+
+            function installNativeControlWinsetHook() {
+                if (!window.Byond || typeof Byond.winset !== "function") {
+                    setTimeout(installNativeControlWinsetHook, 0);
+                    return;
+                }
+
+                if (Byond.__opendreamNativeControlWinsetHook)
+                    return;
+
+                originalWinset = Byond.winset;
+                Byond.__opendreamNativeControlWinsetHook = true;
+                Byond.winset = function(id, params) {
+                    updateOwnGeometry(id, params);
+
+                    if (params && typeof params === "object" && params.pos && params.size) {
+                        var entry = nativeControls[id] || {};
+                        var measuredElement = performance.now() - lastMeasuredElementTime < 50
+                            ? lastMeasuredElement
+                            : null;
+                        entry.params = copyParams(params);
+                        var element = measuredElement || findElementForNativeControl(params) || entry.element;
+                        if (element)
+                            observeNativeControlElement(entry, element);
+                        nativeControls[id] = entry;
+                        ensureNativeControlMaintenance();
+                        updateNativeControl(id, entry);
+                        return;
+                    }
+
+                    if (params && typeof params === "object" && params.parent === "") {
+                        removeNativeControl(id);
+                        return;
+                    }
+
+                    return originalWinset.apply(this, arguments);
+                };
+            }
+
+            installNativeControlWinsetHook();
+            window.addEventListener("scroll", updateNativeControlsForScroll, true);
+            window.addEventListener("resize", scheduleNativeControlUpdate);
+        })();
+        </script>
+        """;
+
     private static readonly Dictionary<string, string> FileExtensionMimeTypes = new() {
         { "css", "text/css" },
         { "html", "text/html" },
@@ -28,8 +490,14 @@ internal sealed partial class ControlBrowser : InterfaceControl {
         { "js", "application/javascript" },
         { "json", "application/json" },
         { "ttf", "font/ttf" },
+        { "woff2", "font/woff2" },
         { "txt", "text/plain" }
     };
+
+    private const uint RefTypeMask = 0xFF000000;
+    private const uint RefIdMask = 0x00FFFFFF;
+    private const uint DreamResourceIconRefType = 0x0C000000;
+    private const uint DreamResourceRefType = 0x27000000;
 
     [Dependency] private IResourceManager _resourceManager = default!;
     [Dependency] private IClientNetManager _netManager = default!;
@@ -39,6 +507,51 @@ internal sealed partial class ControlBrowser : InterfaceControl {
 
     private PanelContainer _panel = default!;
     private WebViewControl _webView = default!;
+    private Vector2i _geometryOrigin;
+
+    private Stream AddBrowserShims(Stream stream) {
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: false);
+        var html = reader.ReadToEnd();
+        html = DisableRemoteTguiStorageCdn(html);
+
+        if (html.Contains("window.__opendreamStorageShim", StringComparison.Ordinal) &&
+            html.Contains("window.__opendreamGeometryShim", StringComparison.Ordinal))
+            return new MemoryStream(Encoding.UTF8.GetBytes(html));
+
+        var shims = string.Empty;
+        if (!html.Contains("window.__opendreamStorageShim", StringComparison.Ordinal))
+            shims += BrowserStorageShim;
+        if (!html.Contains("window.__opendreamGeometryShim", StringComparison.Ordinal)) {
+            shims += BrowserGeometryShimTemplate
+                .Replace("__OPENDREAM_GEOMETRY_X__", _geometryOrigin.X.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
+                .Replace("__OPENDREAM_GEOMETRY_Y__", _geometryOrigin.Y.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        }
+
+        var insertIndex = html.IndexOf("<head>", StringComparison.OrdinalIgnoreCase);
+        if (insertIndex >= 0) {
+            insertIndex += "<head>".Length;
+            html = html.Insert(insertIndex, shims);
+        } else {
+            html = shims + html;
+        }
+
+        return new MemoryStream(Encoding.UTF8.GetBytes(html));
+    }
+
+    private static string DisableRemoteTguiStorageCdn(string html) {
+        const string StorageCdnMetaPrefix = "<meta id=\"tgui:storagecdn\" content=\"";
+
+        var metaIndex = html.IndexOf(StorageCdnMetaPrefix, StringComparison.OrdinalIgnoreCase);
+        if (metaIndex < 0)
+            return html;
+
+        var valueStart = metaIndex + StorageCdnMetaPrefix.Length;
+        var valueEnd = html.IndexOf('"', valueStart);
+        if (valueEnd < 0)
+            return html;
+
+        return html[..valueStart] + html[valueEnd..];
+    }
 
     public ControlBrowser(ControlDescriptor controlDescriptor, ControlWindow window)
         : base(controlDescriptor, window) {
@@ -79,16 +592,17 @@ internal sealed partial class ControlBrowser : InterfaceControl {
     public override void Output(string value, string? jsFunction) {
         if (jsFunction == null) return;
 
-        // Prepare the argument to be used in JS
-        //output is formatted by list2params sometimes, which means raw strings are url encoded, but the message contains & chars which are not encoded that are the params
-        //so we split on &, url decode the parts, and then join them back together with , as the separator for the JS params
-        var parts = value.Split('&');
-        for (var i = 0; i < parts.Length; i++) {
-            parts[i] = "\""+HttpUtility.JavaScriptStringEncode(HttpUtility.UrlDecode(parts[i]))+"\""; //wrap in quotes and encode for JS
-        }
+        if (_webView.Disposed)
+            return;
 
         // Insert the values directly into JS and execute it (what could go wrong??)
-        _webView.ExecuteJavaScript($"{jsFunction}({string.Join(",", parts)})");
+        try {
+            _webView.ExecuteJavaScript(BrowserBridgeScript.FormatOutputCall(jsFunction, value));
+        } catch (Exception e) when (e.GetType().Name == "ObjectDisposedException") {
+            // The window can close while output messages are still queued.
+        } catch (InvalidOperationException e) {
+            _sawmill.Debug($"Ignoring browser output to an unavailable web view: {e.Message}");
+        }
     }
 
     public void SetFileSource(ResPath? filepath) {
@@ -97,6 +611,25 @@ internal sealed partial class ControlBrowser : InterfaceControl {
             _webView.Url = "http://127.0.0.1/" + filepath;
         } else {
             _webView.Url = "about:blank";
+        }
+    }
+
+    public void ShutdownBrowser() {
+        _webView.Url = "about:blank";
+        _webView.AlwaysActive = false;
+    }
+
+    public void SetGeometryOrigin(Vector2i position) {
+        _geometryOrigin = position;
+
+        if (_webView.Disposed)
+            return;
+
+        try {
+            _webView.ExecuteJavaScript($"window.__opendreamGeometryShim && window.__opendreamGeometryShim.set({position.X}, {position.Y});");
+        } catch (Exception e) when (e.GetType().Name == "ObjectDisposedException") {
+        } catch (InvalidOperationException e) {
+            _sawmill.Debug($"Ignoring geometry update to an unavailable web view: {e.Message}");
         }
     }
 
@@ -109,7 +642,11 @@ internal sealed partial class ControlBrowser : InterfaceControl {
             Uri oldUri = new Uri(_webView.Url);
             Uri newUri = new Uri(context.Url);
 
-            if (newUri.Scheme == "byond" || (newUri.AbsolutePath == oldUri.AbsolutePath && newUri.Query != string.Empty)) {
+            bool isLocalTopicNavigation = newUri is { Scheme: "http", Host: "127.0.0.1" } &&
+                newUri.Query != string.Empty &&
+                (newUri.AbsolutePath == oldUri.AbsolutePath || newUri.AbsolutePath == "/");
+
+            if (newUri.Scheme == "byond" || isLocalTopicNavigation) {
                 context.DoCancel();
 
                 switch (newUri.Host) {
@@ -140,13 +677,21 @@ internal sealed partial class ControlBrowser : InterfaceControl {
                 Stream stream;
                 HttpStatusCode status;
                 var path = new ResPath(newUri.AbsolutePath);
-                if (!_dreamResource.EnsureCacheFile(newUri.AbsolutePath)) {
+                if (path.Filename.Equals("favicon.ico", StringComparison.OrdinalIgnoreCase)) {
+                    stream = Stream.Null;
+                    status = HttpStatusCode.NotFound;
+                } else if (TryServeIconResourceUrl(newUri, out stream)) {
+                    status = HttpStatusCode.OK;
+                } else if (!_dreamResource.EnsureCacheFile(newUri.AbsolutePath)) {
                     stream = Stream.Null;
                     status = HttpStatusCode.NotFound;
                 } else {
                     try {
-                        stream = _resourceManager.UserData.OpenRead(
-                            _dreamResource.GetCacheFilePath(newUri.AbsolutePath));
+                        stream = _resourceManager.UserData.Open(
+                            _dreamResource.GetCacheFilePath(newUri.AbsolutePath),
+                            FileMode.Open,
+                            FileAccess.Read,
+                            FileShare.ReadWrite | FileShare.Delete);
                         status = HttpStatusCode.OK;
                     } catch (FileNotFoundException) {
                         stream = Stream.Null;
@@ -158,13 +703,94 @@ internal sealed partial class ControlBrowser : InterfaceControl {
                     }
                 }
 
-                var mimeType = FileExtensionMimeTypes.GetValueOrDefault(path.Extension, "application/octet-stream");
+                var mimeType = TryParseResourceRef(newUri.AbsolutePath, out _) && newUri.Query != string.Empty
+                    ? "image/png"
+                    : FileExtensionMimeTypes.GetValueOrDefault(path.Extension, "application/octet-stream");
+                if (status == HttpStatusCode.OK && mimeType == "text/html")
+                    stream = AddBrowserShims(stream);
+
                 context.DoRespondStream(stream, mimeType, status);
             }
         } catch (Exception e) {
             _sawmill.Error($"Exception in RequestHandler: {e}");
             context.DoCancel();
         }
+    }
+
+    private bool TryServeIconResourceUrl(Uri uri, out Stream stream) {
+        stream = Stream.Null;
+
+        if (uri.Query == string.Empty || !TryParseResourceRef(uri.AbsolutePath, out var resourceId))
+            return false;
+
+        DMIResource? dmi = null;
+        TaskCompletionSource loadedResource = new();
+
+        _dreamResource.LoadResourceAsync<DMIResource>(resourceId, resource => {
+            dmi = resource;
+            loadedResource.SetResult();
+        });
+
+        if (!loadedResource.Task.Wait(TimeSpan.FromSeconds(5))) {
+            _sawmill.Error($"Timed out loading icon resource {uri.AbsolutePath} for browser image {uri}");
+            return false;
+        }
+
+        var queryParams = HttpUtility.ParseQueryString(uri.Query);
+        var state = queryParams.Get("state");
+        var direction = ParseIconDirection(queryParams.Get("dir"));
+        var frame = ParseIconFrame(queryParams.Get("frame"));
+
+        if (dmi == null) {
+            _sawmill.Error($"Browser icon resource {uri.AbsolutePath} resolved to null for {uri}");
+            return false;
+        }
+
+        var png = dmi.GetStateAsPng(state, direction, frame);
+        if (png == null) {
+            _sawmill.Error($"Browser icon resource {uri.AbsolutePath} could not render state=\"{state}\" dir={direction} frame={frame + 1} for {uri}. Known states: {dmi.DescribeStatesForLog()}");
+            return false;
+        }
+
+        _sawmill.Debug($"Served browser icon resource {uri.AbsolutePath} state=\"{state}\" dir={direction} frame={frame + 1} length={png.Length}");
+
+        stream = new MemoryStream(png);
+        return true;
+    }
+
+    private static bool TryParseResourceRef(string path, out int resourceId) {
+        resourceId = 0;
+        var resourceRef = Uri.UnescapeDataString(path).TrimStart('/');
+
+        if (!resourceRef.StartsWith('[') || !resourceRef.EndsWith(']'))
+            return false;
+
+        var refText = resourceRef[1..^1];
+        if (!refText.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ||
+            !uint.TryParse(refText[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var refValue))
+            return false;
+
+        var refType = refValue & RefTypeMask;
+        if (refType is not (DreamResourceIconRefType or DreamResourceRefType))
+            return false;
+
+        resourceId = (int)(refValue & RefIdMask);
+        return true;
+    }
+
+    private static AtomDirection ParseIconDirection(string? direction) {
+        if (!byte.TryParse(direction, NumberStyles.Integer, CultureInfo.InvariantCulture, out var directionValue))
+            return AtomDirection.South;
+
+        return (AtomDirection)directionValue;
+    }
+
+    private static int ParseIconFrame(string? frame) {
+        if (!int.TryParse(frame, NumberStyles.Integer, CultureInfo.InvariantCulture, out var frameValue))
+            return 0;
+
+        // BYOND icon URL helpers use 1-based frame numbers.
+        return Math.Max(frameValue - 1, 0);
     }
 
     /// <summary>
@@ -177,12 +803,17 @@ internal sealed partial class ControlBrowser : InterfaceControl {
         // Also replace ';' with '&' because they're both usable here
         var queryParams = HttpUtility.ParseQueryString(query.Substring(1).Replace(';', '&'));
 
-        // We need to extract the control element (if one was included)
-        string? element = queryParams.Get("element");
+        // We need to extract the control element (if one was included).
+        // BYOND's browser helpers use "id" here, older OpenDream callers used "element".
+        string? element = queryParams.Get("element") ?? queryParams.Get("id");
         queryParams.Remove("element");
+        queryParams.Remove("id");
 
         // Wrap each parameter in quotes so the entire value is used
         foreach (var paramKey in queryParams.AllKeys) {
+            if (paramKey == null)
+                continue;
+
             var paramValue = queryParams[paramKey];
             if (paramValue == null)
                 continue;
@@ -210,43 +841,59 @@ internal sealed partial class ControlBrowser : InterfaceControl {
         // Also replace ';' with '&' because they're both usable here
         var queryParams = HttpUtility.ParseQueryString(query.Substring(1).Replace(';', '&'));
 
-        var elementId = queryParams.Get("id");
-        var property = queryParams.Get("property");
-        var callback = queryParams.Get("callback");
-        if (elementId == null || property == null || callback == null) {
+        if (queryParams.Get("id") is not { } elementId ||
+            queryParams.Get("property") is not { } property ||
+            queryParams.Get("callback") is not { } callback) {
             _sawmill.Error($"Required arg 'id', 'property', or 'callback' not provided in embedded winget ({query})");
             return;
         }
 
-        // TG uses property=* but really just wants size
-        // TODO: Actual winget * support
-        bool forceJson = true;
-        if (property == "*") {
+        // tg/TGUI's Byond.winget('output') asks for "*" but uses only the size field
+        // to resize the browseroutput pane. Keep that legacy shape instead of handing
+        // the browser a huge descriptor object that changes the panel layout path.
+        var outputSizeOnly = elementId == "output" && property == "*";
+        if (outputSizeOnly)
             property = "size";
-            forceJson = false; // property=* does not return "as json" values (why?!)
-        }
 
         // Multiple properties can be queried in a single winget with "&property=size,view-size"
         var properties = property.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         var jsonBuilder = new StringBuilder(); // Build the JSON object that the callback receives
 
-        jsonBuilder.Append("{ ");
-        foreach (var wingetting in properties) {
-            if (jsonBuilder.Length > 2)
-                jsonBuilder.Append(", ");
+        if (properties.Length == 1 && properties[0] == "*") {
+            jsonBuilder.Append(InterfaceManager.WinGet(elementId, "*", forceJson: true));
+        } else {
+            jsonBuilder.Append("{ ");
+            foreach (var wingetting in properties) {
+                if (jsonBuilder.Length > 2)
+                    jsonBuilder.Append(", ");
 
-            jsonBuilder.Append('"');
-            jsonBuilder.Append(HttpUtility.JavaScriptStringEncode(wingetting));
-            jsonBuilder.Append("\": ");
-            var result = InterfaceManager.WinGet(elementId, wingetting, forceJson: forceJson);
-            jsonBuilder.Append(result);
+                jsonBuilder.Append('"');
+                jsonBuilder.Append(HttpUtility.JavaScriptStringEncode(wingetting));
+                jsonBuilder.Append("\": ");
+                var result = InterfaceManager.WinGet(elementId, wingetting, forceJson: !outputSizeOnly);
+
+                jsonBuilder.Append(string.IsNullOrEmpty(result)
+                    ? "\"\""
+                    : outputSizeOnly
+                        ? $"\"{HttpUtility.JavaScriptStringEncode(result)}\""
+                        : result);
+            }
+
+            jsonBuilder.Append(" }");
         }
-
-        jsonBuilder.Append(" }");
 
         // Execute the callback
         var json = jsonBuilder.ToString();
-        _webView.ExecuteJavaScript($"{callback}({json})");
+        if (_webView.Disposed)
+            return;
+
+        try {
+            _webView.ExecuteJavaScript($"{callback}({json})");
+        } catch (Exception e) when (e.GetType().Name == "ObjectDisposedException") {
+            // The window can close while winget callbacks are still queued.
+        } catch (InvalidOperationException e) {
+            _sawmill.Debug($"Ignoring embedded winget callback to an unavailable web view: {e.Message}");
+        }
     }
 
     private void OnShowEvent() {

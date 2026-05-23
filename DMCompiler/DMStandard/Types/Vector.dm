@@ -8,7 +8,7 @@
 	proc/New(x, y, z)
 	
 	proc/Cross(vector/B)
-		set opendream_unimplemented = TRUE
+		return vector(y * B.z - z * B.y, z * B.x - x * B.z, x * B.y - y * B.x)
 	
 	proc/Dot(vector/B)
 		return x * B.x + y * B.y + z * B.z
@@ -21,7 +21,13 @@
 		return src
 	
 	proc/Turn(angle)
-		set opendream_unimplemented = TRUE
+		var/cosine = cos(angle)
+		var/sine = sin(angle)
+
+		return vector(x * cosine - y * sine, x * sine + y * cosine)
 
 /proc/vector(x, y, z)
+	if (isnull(z))
+		return new /vector(x, y)
+
 	return new /vector(x, y, z)

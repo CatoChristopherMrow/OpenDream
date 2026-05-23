@@ -1,0 +1,6 @@
+// NOBYOND
+/proc/RunTest()
+	ASSERT(shell("exit 7") == 7)
+	ASSERT(run("") == FALSE)
+	ASSERT(world.OpenPort(0) == TRUE)
+	ASSERT(world.OpenPort(-1) == FALSE)

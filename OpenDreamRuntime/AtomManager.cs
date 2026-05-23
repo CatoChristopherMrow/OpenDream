@@ -1,4 +1,5 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using JetBrains.Annotations;
 using OpenDreamRuntime.Map;
@@ -15,6 +16,46 @@ using Dependency = Robust.Shared.IoC.DependencyAttribute;
 namespace OpenDreamRuntime;
 
 public sealed partial class AtomManager {
+    private static readonly FrozenSet<string> AppearanceVars = new[] {
+        "name",
+        "desc",
+        "icon",
+        "icon_state",
+        "dir",
+        "pixel_x",
+        "pixel_y",
+        "pixel_w",
+        "pixel_z",
+        "icon_w",
+        "icon_z",
+        "color",
+        "layer",
+        "invisibility",
+        "opacity",
+        "mouse_opacity",
+        "plane",
+        "blend_mode",
+        "appearance_flags",
+        "alpha",
+        "glide_size",
+        "render_source",
+        "render_target",
+        "transform",
+        "appearance",
+        "verbs",
+        "overlays",
+        "underlays",
+        "maptext",
+        "maptext_width",
+        "maptext_height",
+        "maptext_x",
+        "maptext_y",
+        "mouse_drag_pointer",
+        "mouse_drop_pointer",
+        "mouse_drop_zone",
+        "mouse_over_pointer",
+    }.ToFrozenSet(StringComparer.Ordinal);
+
     public int AtomCount {
         get {
             ReadOnlySpan<RefType> atomTypes = [
@@ -108,7 +149,7 @@ public sealed partial class AtomManager {
         var entity = _entityManager.SpawnEntity(null, new MapCoordinates(0, 0, MapId.Nullspace));
 
         DMISpriteComponent sprite = _entityManager.AddComponent<DMISpriteComponent>(entity);
-        DMISpriteSystem?.SetSpriteAppearance(new(entity, sprite), GetAppearanceFromDefinition(movable.ObjectDefinition));
+        SetSpriteAppearance(new(entity, sprite), GetAppearanceFromDefinition(movable.ObjectDefinition));
 
         _entityToAtom.Add(entity, movable);
         return entity;
@@ -124,49 +165,8 @@ public sealed partial class AtomManager {
     }
 
     public bool IsValidAppearanceVar(string name) {
-        switch (name) {
-            case "name":
-            case "desc":
-            case "icon":
-            case "icon_state":
-            case "dir":
-            case "pixel_x":
-            case "pixel_y":
-            case "pixel_w":
-            case "pixel_z":
-            case "color":
-            case "layer":
-            case "invisibility":
-            case "opacity":
-            case "mouse_opacity":
-            case "plane":
-            case "blend_mode":
-            case "appearance_flags":
-            case "alpha":
-            case "glide_size":
-            case "render_source":
-            case "render_target":
-            case "transform":
-            case "appearance":
-            case "verbs":
-            case "overlays":
-            case "underlays":
-            case "maptext":
-            case "maptext_width":
-            case "maptext_height":
-            case "maptext_x":
-            case "maptext_y":
-            case "mouse_drag_pointer":
-            case "mouse_drop_pointer":
-            case "mouse_drop_zone":
-            case "mouse_over_pointer":
-                return true;
-
-            // Get/SetAppearanceVar doesn't handle filters right now
-            case "filters":
-            default:
-                return false;
-        }
+        // Get/SetAppearanceVar doesn't handle filters right now
+        return AppearanceVars.Contains(name);
     }
 
     public void SetAppearanceVar(MutableAppearance appearance, string varName, DreamValue value) {
@@ -188,7 +188,7 @@ public sealed partial class AtomManager {
 
                 break;
             case "icon_state":
-                value.TryGetValueAsString(out appearance.IconState);
+                appearance.IconState = value.TryGetValueAsString(out var iconState) && iconState.Length > 0 ? iconState : null;
                 break;
             case "dir":
                 value.TryGetValueAsInteger(out var dir);
@@ -212,6 +212,12 @@ public sealed partial class AtomManager {
                 break;
             case "pixel_z":
                 value.TryGetValueAsInteger(out appearance.PixelOffset2.Y);
+                break;
+            case "icon_w":
+                value.TryGetValueAsInteger(out appearance.IconOffset.X);
+                break;
+            case "icon_z":
+                value.TryGetValueAsInteger(out appearance.IconOffset.Y);
                 break;
             case "color":
                 if(value.TryGetValueAsDreamList(out var list)) {
@@ -286,6 +292,8 @@ public sealed partial class AtomManager {
 
                         if (!verb.VerbId.HasValue)
                             VerbSystem?.RegisterVerb(verb);
+                        if (!verb.VerbId.HasValue)
+                            continue;
                         if (appearance.Verbs.Contains(verb.VerbId!.Value))
                             continue;
 
@@ -294,6 +302,8 @@ public sealed partial class AtomManager {
                 } else if (value.TryGetValueAsProc(out var verb)) {
                     if (!verb.VerbId.HasValue)
                         VerbSystem?.RegisterVerb(verb);
+                    if (!verb.VerbId.HasValue)
+                        break;
 
                     appearance.Verbs.Add(verb.VerbId!.Value);
                 }
@@ -381,6 +391,10 @@ public sealed partial class AtomManager {
                 return new(appearance.PixelOffset2.X);
             case "pixel_z":
                 return new(appearance.PixelOffset2.Y);
+            case "icon_w":
+                return new(appearance.IconOffset.X);
+            case "icon_z":
+                return new(appearance.IconOffset.Y);
             case "color":
                 if(!appearance.ColorMatrix.Equals(ColorMatrix.Identity)) {
                     var matrixList = _objectTree.CreateList(20);
@@ -450,6 +464,16 @@ public sealed partial class AtomManager {
             case "appearance":
                 MutableAppearance appearanceCopy = appearance.ToMutable(); // Return a copy
                 return new(appearanceCopy);
+            case "verbs": {
+                var verbs = _objectTree.CreateList(appearance.Verbs.Length);
+                if (VerbSystem != null) {
+                    foreach (var verbId in appearance.Verbs) {
+                        verbs.AddValue(new(VerbSystem.GetVerb(verbId)));
+                    }
+                }
+
+                return new(verbs);
+            }
 
             // These should be handled by an atom if referenced through one
             case "overlays":
@@ -514,9 +538,9 @@ public sealed partial class AtomManager {
     public void SetAtomAppearance(DreamObject atom, MutableAppearance appearance) {
         if (atom is DreamObjectImage image) {
             if(image.IsMutableAppearance)
-                image.MutableAppearance = MutableAppearance.GetCopy(appearance); //this needs to be a copy
+                image.SetMutableAppearance(appearance);
             else
-                DMISpriteSystem?.SetSpriteAppearance(new(image.Entity, image.SpriteComponent!), appearance);
+                SetSpriteAppearance(new(image.Entity, image.SpriteComponent!), appearance);
             return;
         }
 
@@ -525,7 +549,7 @@ public sealed partial class AtomManager {
         if (atom is DreamObjectTurf turf) {
             _dreamMapManager.SetTurfAppearance(turf, appearance);
         } else if (atom is DreamObjectMovable movable) {
-            DMISpriteSystem?.SetSpriteAppearance(new(movable.Entity, movable.SpriteComponent), appearance);
+            SetSpriteAppearance(new(movable.Entity, movable.SpriteComponent), appearance);
         } else if (atom is DreamObjectArea area) {
             _dreamMapManager.SetAreaAppearance(area, appearance);
         }
@@ -535,11 +559,19 @@ public sealed partial class AtomManager {
         DMISpriteSystem?.SetSpriteScreenLocation(new(movable.Entity, movable.SpriteComponent), screenLocation);
     }
 
-    public void SetSpriteAppearance(Entity<DMISpriteComponent> ent, MutableAppearance appearance) {
-        DMISpriteSystem?.SetSpriteAppearance(ent, appearance);
+    public void SetMovableBoundOffset(DreamObjectMovable movable, Vector2i boundOffset) {
+        DMISpriteSystem?.SetSpriteBoundOffset(new(movable.Entity, movable.SpriteComponent), boundOffset);
     }
 
-    public void AnimateAppearance(DreamObject atom, TimeSpan duration, AnimationEasing easing, int loop, AnimationFlags flags, int delay, bool chainAnim, Action<MutableAppearance> animate) {
+    public void SetSpriteAppearance(Entity<DMISpriteComponent> ent, MutableAppearance appearance) {
+        if (DMISpriteSystem != null) {
+            DMISpriteSystem.SetSpriteAppearance(ent, appearance);
+        } else {
+            DMISpriteSystem.SetSpriteAppearance(ent, new ImmutableAppearance(appearance, null));
+        }
+    }
+
+    public void AnimateAppearance(DreamObject atom, TimeSpan duration, AnimationEasing easing, int loop, AnimationFlags flags, int delay, bool chainAnim, string? tag, string? command, Action<MutableAppearance> animate) {
         MutableAppearance appearance;
         EntityUid targetEntity;
         DMISpriteComponent? targetComponent = null;
@@ -584,7 +616,32 @@ public sealed partial class AtomManager {
             //fuck knows, this will trigger a bunch of turf updates to? idek
         }
 
-        AppearanceSystem?.Animate(ent, appearance, duration, easing, loop, flags, delay, chainAnim, turfId);
+        string? atomRef = null;
+        if (command is not null) {
+            using var atomValue = new DreamValue(atom);
+            atomRef = _refManager.GetRefString(atomValue);
+        }
+
+        AppearanceSystem?.Animate(ent, appearance, duration, easing, loop, flags, delay, chainAnim, turfId, tag, command, atomRef);
+    }
+
+    public void StopAppearanceAnimation(DreamObject atom, string tag) {
+        NetEntity ent = NetEntity.Invalid;
+        uint? turfId = null;
+
+        if (atom is DreamObjectMovable movable) {
+            ent = _entityManager.GetNetEntity(movable.Entity);
+        } else if (atom is DreamObjectImage { IsMutableAppearance: false } image) {
+            ent = _entityManager.GetNetEntity(image.Entity);
+        } else if (atom is DreamObjectTurf turf) {
+            turfId = turf.Appearance.MustGetId();
+        } else if (atom is DreamObjectArea or DreamObjectClient or DreamObjectFilter) {
+            return;
+        } else {
+            throw new ArgumentException($"Cannot stop appearance animation of {atom}");
+        }
+
+        AppearanceSystem?.StopAnimation(ent, turfId, tag);
     }
 
     public bool TryCreateAppearanceFrom(DreamValue value, [NotNullWhen(true)] out MutableAppearance? appearance) {

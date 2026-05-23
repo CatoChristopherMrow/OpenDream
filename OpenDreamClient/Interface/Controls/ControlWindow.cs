@@ -50,7 +50,7 @@ public sealed partial class ControlWindow : InterfaceControl {
             _menuContainer.Visible = false;
         }
 
-        if(!WindowDescriptor.IsPane.Value)
+        if (!WindowDescriptor.IsPane.Value && (!WindowDescriptor.IsDefault.Value || _myWindow.clydeWindow != null || _myWindow.osWindow != null))
             UpdateWindowAttributes(_myWindow);
 
         if (WindowDescriptor.IsDefault.Value) {
@@ -66,11 +66,12 @@ public sealed partial class ControlWindow : InterfaceControl {
             _myWindow.osWindow.Close();
     }
 
-    public OSWindow CreateWindow() {
+    public OSWindow CreateWindow(IClydeWindow? owner = null, WindowStartupLocation? startupLocation = null, bool useMainWindowOwner = true) {
         if(_myWindow.osWindow is not null)
             return _myWindow.osWindow;
 
         OSWindow window = new();
+        window.WindowStyles = GetWindowStyles();
         if(UIElement.Parent is not null)
             UIElement.Orphan();
         window.Children.Add(UIElement);
@@ -92,13 +93,38 @@ public sealed partial class ControlWindow : InterfaceControl {
 
             _myWindow = (null, _myWindow.clydeWindow);
         };
-        window.StartupLocation = WindowStartupLocation.CenterOwner;
-        window.Owner = _clyde.MainWindow;
+        window.StartupLocation = startupLocation ?? WindowStartupLocation.CenterOwner;
+        window.Owner = useMainWindowOwner ? owner ?? _clyde.MainWindow : owner;
 
         _myWindow = (window, _myWindow.clydeWindow);
         window.Create();
         UpdateWindowAttributes(_myWindow);
         return window;
+    }
+
+    private OSWindowStyles GetWindowStyles() {
+        var styles = OSWindowStyles.None;
+
+        if (!WindowDescriptor.TitleBar.Value || IsSmallBrowserOnlyWindow()) {
+            styles |= OSWindowStyles.NoTitleBar;
+        } else if (!WindowDescriptor.CanClose.Value || !WindowDescriptor.CanMinimize.Value) {
+            styles |= OSWindowStyles.NoTitleOptions;
+        }
+
+        return styles;
+    }
+
+    private bool IsSmallBrowserOnlyWindow() {
+        if (WindowDescriptor.StatusBar.Value || WindowDescriptor.Size.Y > 100)
+            return false;
+
+        var hasBrowser = false;
+        foreach (var descriptor in WindowDescriptor.ControlDescriptors) {
+            if (descriptor is ControlDescriptorBrowser)
+                hasBrowser = true;
+        }
+
+        return hasBrowser && (!WindowDescriptor.CanMinimize.Value || string.IsNullOrWhiteSpace(WindowDescriptor.Title.Value));
     }
 
     public void RegisterOnClydeWindow(IClydeWindow window) {
@@ -109,7 +135,21 @@ public sealed partial class ControlWindow : InterfaceControl {
         }
 
         _myWindow = (null, window);
+        LetParentControlSizeWindow();
         UpdateWindowAttributes(_myWindow);
+    }
+
+    public void RegisterAsEmbeddedPane() {
+        if (!WindowDescriptor.IsPane.Value)
+            return;
+
+        LetParentControlSizeWindow();
+        UpdateAnchors();
+    }
+
+    private void LetParentControlSizeWindow() {
+        UIElement.SetWidth = float.NaN;
+        UIElement.SetHeight = float.NaN;
     }
 
     public void UpdateAnchors() {
@@ -177,6 +217,18 @@ public sealed partial class ControlWindow : InterfaceControl {
         }
 
         UpdateAnchors();
+    }
+
+    public override void Output(string value, string? data) {
+        if (data == null)
+            return;
+
+        foreach (var child in ChildControls) {
+            if (child is ControlBrowser browser) {
+                browser.Output(value, data);
+                return;
+            }
+        }
     }
 
     private void UpdateWindowAttributes((OSWindow? osWindow, IClydeWindow? clydeWindow) windowRoot) {
@@ -265,6 +317,16 @@ public sealed partial class ControlWindow : InterfaceControl {
         _canvas.Children.Add(control.UIElement);
     }
 
+    public bool RemoveChild(InterfaceControl control) {
+        if (!ChildControls.Remove(control))
+            return false;
+
+        WindowDescriptor.ControlDescriptors.Remove((ControlDescriptor)control.ElementDescriptor);
+        control.UIElement.Orphan();
+        control.Shutdown();
+        return true;
+    }
+
     // Because of how windows are not always real windows,
     // UIControl contains the *contents* of the window, not the actual OS window itself.
     protected override Control CreateUIElement() {
@@ -341,12 +403,19 @@ public sealed partial class ControlWindow : InterfaceControl {
     public override void SetProperty(string property, string value, bool manualWinset = false) {
         switch (property) {
             case "size":
+                var size = new DMFPropertySize(value);
+                ControlDescriptor.Size = size;
+                UpdateAnchors();
+
+                if (_myWindow.osWindow == null && _myWindow.clydeWindow == null)
+                    UIElement.SetSize = size.Vector;
+
                 if (_myWindow.osWindow is {ClydeWindow: not null}) {
-                    var size = new DMFPropertySize(value);
+                    var osSize = new DMFPropertySize(value);
                     var uiScale = _myWindow.osWindow.UIScale;
-                    size.X = (int)(size.X * uiScale); // TODO: RT should probably do this itself
-                    size.Y = (int)(size.Y * uiScale);
-                    _myWindow.osWindow.ClydeWindow.Size = size.Vector;
+                    osSize.X = (int)(osSize.X * uiScale); // TODO: RT should probably do this itself
+                    osSize.Y = (int)(osSize.Y * uiScale);
+                    _myWindow.osWindow.ClydeWindow.Size = osSize.Vector;
                 }
 
                 return;

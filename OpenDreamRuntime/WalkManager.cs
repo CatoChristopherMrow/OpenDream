@@ -119,6 +119,63 @@ public sealed partial class WalkManager {
     }
 
     /// <summary>
+    /// Walk away from the target until the movable reaches the requested maximum distance.
+    /// </summary>
+    public void StartWalkAway(DreamObjectMovable movable, DreamObjectAtom target, int max, int lag, int speed) { // TODO: Implement speed. Speed=0 uses Ref.step_size
+        StopWalks(movable);
+
+        lag = Math.Max(lag, 1); // Minimum of 1 tick lag
+
+        CancellationTokenSource cancelSource = new();
+        _walkTasks[movable] = cancelSource;
+        movable.IncRef();
+
+        DreamThread.Run($"walk_away {movable}", async state => {
+            var moveProc = movable.GetProc("Move");
+
+            while (true) {
+                await _scheduler.CreateDelayTicks(lag);
+                if (cancelSource.IsCancellationRequested)
+                    break;
+
+                var currentLoc = _atomManager.GetAtomPosition(movable);
+                var targetLoc = _atomManager.GetAtomPosition(target);
+                if (currentLoc.Z != targetLoc.Z)
+                    break;
+
+                var distance = Math.Max(Math.Abs(currentLoc.X - targetLoc.X), Math.Abs(currentLoc.Y - targetLoc.Y));
+                if (max > 0 && distance >= max)
+                    break;
+
+                AtomDirection dir = GetOppositeDirection(DreamProcNativeHelpers.GetDir(currentLoc, targetLoc));
+                if (dir == AtomDirection.None)
+                    continue;
+
+                DreamObjectTurf? newLoc = DreamProcNativeHelpers.GetStep(_atomManager, _dreamMapManager, movable, dir);
+                await state.CallNoWait(moveProc, movable, null, new(newLoc), new((int)dir));
+            }
+
+            StopWalks(movable);
+            return DreamValue.Null;
+        }).Dispose();
+    }
+
+    private static AtomDirection GetOppositeDirection(AtomDirection dir) {
+        AtomDirection opposite = AtomDirection.None;
+
+        if ((dir & AtomDirection.North) != 0)
+            opposite |= AtomDirection.South;
+        if ((dir & AtomDirection.South) != 0)
+            opposite |= AtomDirection.North;
+        if ((dir & AtomDirection.East) != 0)
+            opposite |= AtomDirection.West;
+        if ((dir & AtomDirection.West) != 0)
+            opposite |= AtomDirection.East;
+
+        return opposite;
+    }
+
+    /// <summary>
     /// Walk towards the target with pathfinding taken into account
     /// </summary>
     public void StartWalkTo(DreamObjectMovable movable, DreamObjectAtom target, int min, int lag, int speed) { // TODO: Implement speed. Speed=0 uses Ref.step_size

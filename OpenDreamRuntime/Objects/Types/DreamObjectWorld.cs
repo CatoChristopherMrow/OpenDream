@@ -26,6 +26,7 @@ public sealed partial class DreamObjectWorld : DreamObject {
 
     public float Cpu { get; set; }
     public readonly int IconSize;
+    public MapFormat MapFormat { get; private set; }
 
     [Dependency] private IBaseServer _server = default!;
     [Dependency] private IGameTiming _gameTiming = default!;
@@ -43,6 +44,8 @@ public sealed partial class DreamObjectWorld : DreamObject {
         get => _gameTiming.TickRate;
         set => _gameTiming.TickRate = (byte)value;
     }
+
+    private double WorldTime => (_gameTiming.CurTick.Value - DreamManager.InitializedTick.Value + 1) * TickLag;
 
     /// <summary> Determines whether we try to show IPv6 or IPv4 to the user during .address and .internet_address queries.</summary>
     private bool DisplayIPv6 {
@@ -67,7 +70,7 @@ public sealed partial class DreamObjectWorld : DreamObject {
     private DreamValue _params;
 
     /// <summary> Tries to return the address of the server, as it appears over the internet. May return null.</summary>
-    private IPAddress? InternetAddress => null; //TODO: Implement this!
+    private IPAddress InternetAddress => DisplayIPv6 ? IPAddress.IPv6Loopback : IPAddress.Loopback;
 
     public DreamObjectWorld(DreamObjectDefinition objectDefinition) : base(objectDefinition) {
         IoCManager.InjectDependencies(this);
@@ -83,6 +86,9 @@ public sealed partial class DreamObjectWorld : DreamObject {
             _sawmill.Warning("world.icon_size did not contain a valid value. A default of 32 is being used.");
             IconSize = 32;
         }
+
+        if (objectDefinition.Variables["map_format"].TryGetValueAsInteger(out var mapFormat))
+            MapFormat = (MapFormat)mapFormat;
 
         DreamValue view = objectDefinition.Variables["view"];
         if (view.TryGetValueAsString(out var viewString)) {
@@ -127,10 +133,9 @@ public sealed partial class DreamObjectWorld : DreamObject {
                 value = _params;
                 return true;
 
-            case "status":
             case "name":
-                value = new(string.Empty); // TODO
-                return true;
+            case "status":
+                return base.TryGetVar(varName, out value);
 
             case "contents":
                 value = new(new WorldContentsList(ObjectTree.List.ObjectDefinition, AtomManager));
@@ -157,7 +162,7 @@ public sealed partial class DreamObjectWorld : DreamObject {
                 return true;
 
             case "time":
-                value = new DreamValue((_gameTiming.CurTick.Value - DreamManager.InitializedTick.Value) * TickLag);
+                value = new DreamValue(WorldTime);
                 return true;
 
             case "realtime":
@@ -203,22 +208,12 @@ public sealed partial class DreamObjectWorld : DreamObject {
                 return true;
 
             case "url":
-                if (InternetAddress == null)
-                    value = DreamValue.Null;
-                else
-                    value = new(InternetAddress + ":" + _netManager.Port); // RIP "opendream://"
+                value = new(InternetAddress + ":" + _netManager.Port); // RIP "opendream://"
 
                 return true;
 
             case "internet_address":
-                IPAddress? address = InternetAddress;
-                // We don't need to do any logic with DisplayIPv6 since whatever this address is,
-                // ought to be the address that the boolean's getter is searching for anyways.
-                if (address == null)
-                    value = DreamValue.Null;
-                else
-                    value = new(address.ToString());
-
+                value = new(InternetAddress.ToString());
                 return true;
 
             case "system_type":
@@ -226,7 +221,7 @@ public sealed partial class DreamObjectWorld : DreamObject {
                 if (Environment.OSVersion.Platform is PlatformID.Unix or PlatformID.MacOSX or PlatformID.Other)
                     value = new DreamValue("UNIX");
                 else
-                    value = new DreamValue("MS_WINDOWS"); //Windows
+                    value = new DreamValue("MS Windows"); //Windows
 
                 return true;
 
@@ -259,8 +254,17 @@ public sealed partial class DreamObjectWorld : DreamObject {
             case "game_state":
             case "hub":
             case "hub_password":
+            case "loop_checks":
+            case "map_format":
+                if (value.TryGetValueAsInteger(out var mapFormat))
+                    MapFormat = (MapFormat)mapFormat;
+                // Set it in the var dictionary, so reading at least gives the same value
+                base.SetVar(varName, value);
+                break;
             case "mob":
+            case "movement_mode":
             case "name":
+            case "reachable":
             case "status":
             case "version":
             case "visibility":

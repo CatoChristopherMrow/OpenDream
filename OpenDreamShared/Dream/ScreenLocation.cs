@@ -26,6 +26,17 @@ public enum VerticalAnchor {
     Top
 }
 
+public readonly record struct ScreenLocationBounds(float Left, float Bottom, float Right, float Top) {
+    public ScreenLocationBounds Include(ScreenLocationBounds bounds) {
+        return new(
+            Math.Min(Left, bounds.Left),
+            Math.Min(Bottom, bounds.Bottom),
+            Math.Max(Right, bounds.Right),
+            Math.Max(Top, bounds.Top)
+        );
+    }
+}
+
 [Serializable, NetSerializable]
 public sealed class ScreenLocation {
     public string? MapControl;
@@ -34,6 +45,7 @@ public sealed class ScreenLocation {
     public int X, Y;
     public int PixelOffsetX, PixelOffsetY;
     public ScreenLocation? Range;
+    public bool AnchorToScreenBounds;
 
     public int RepeatX => Range?.X - X + 1 ?? 1;
     public int RepeatY => Range?.Y - Y + 1 ?? 1;
@@ -42,10 +54,20 @@ public sealed class ScreenLocation {
 
     private static string[] _keywords = [
         "CENTER",
+        "MIDDLE",
         "WEST", "EAST", "LEFT", "RIGHT",
         "NORTH", "SOUTH", "TOP", "BOTTOM",
         "TOPLEFT", "TOPRIGHT",
-        "BOTTOMLEFT", "BOTTOMRIGHT"
+        "BOTTOMLEFT", "BOTTOMRIGHT",
+        "NORTHWEST", "NORTHEAST",
+        "SOUTHWEST", "SOUTHEAST",
+        "SCREEN_CENTER", "SCREEN_MIDDLE",
+        "SCREEN_WEST", "SCREEN_EAST", "SCREEN_LEFT", "SCREEN_RIGHT",
+        "SCREEN_NORTH", "SCREEN_SOUTH", "SCREEN_TOP", "SCREEN_BOTTOM",
+        "SCREEN_TOPLEFT", "SCREEN_TOPRIGHT",
+        "SCREEN_BOTTOMLEFT", "SCREEN_BOTTOMRIGHT",
+        "SCREEN_NORTHWEST", "SCREEN_NORTHEAST",
+        "SCREEN_SOUTHWEST", "SCREEN_SOUTHEAST"
     ];
 
     public ScreenLocation(int x, int y, int pixelOffsetX, int pixelOffsetY, ScreenLocation? range = null) {
@@ -71,28 +93,44 @@ public sealed class ScreenLocation {
         ParseScreenLoc(screenLocation);
     }
 
-    public Vector2 GetViewPosition(Vector2 viewOffset, ViewRange view, float tileSize, Vector2i iconSize) {
+    public Vector2 GetViewPosition(Vector2 viewOffset, ViewRange view, float tileSize, Vector2i iconSize, ScreenLocationBounds? screenBounds = null) {
         // TODO: LEFT/RIGHT/TOP/BOTTOM need to stick to the edge of the visible map if the map's container is smaller than the map itself
-        
+        ScreenLocationBounds bounds = AnchorToScreenBounds && screenBounds != null
+            ? screenBounds.Value
+            : new ScreenLocationBounds(0, 0, view.Width, view.Height);
+        Vector2 iconSizeTiles = iconSize / tileSize;
+
         float x = (X + PixelOffsetX / tileSize);
         x += HorizontalAnchor switch {
-            HorizontalAnchor.West or HorizontalAnchor.Left => 0,
-            HorizontalAnchor.Center => view.CenterX,
-            HorizontalAnchor.East => view.Width - 1,
-            HorizontalAnchor.Right => view.Width - (iconSize.X / tileSize),
+            HorizontalAnchor.West or HorizontalAnchor.Left => bounds.Left,
+            HorizontalAnchor.Center => AnchorToScreenBounds ? (bounds.Left + bounds.Right - iconSizeTiles.X) / 2 : view.CenterX,
+            HorizontalAnchor.East => bounds.Right - 1,
+            HorizontalAnchor.Right => bounds.Right - iconSizeTiles.X,
             _ => throw new Exception($"Invalid horizontal anchor {HorizontalAnchor}")
         };
 
         float y = (Y + PixelOffsetY / tileSize);
         y += VerticalAnchor switch {
-            VerticalAnchor.South or VerticalAnchor.Bottom => 0,
-            VerticalAnchor.Center => view.CenterY,
-            VerticalAnchor.North => view.Height - 1,
-            VerticalAnchor.Top => view.Height - (iconSize.Y / tileSize),
+            VerticalAnchor.South or VerticalAnchor.Bottom => bounds.Bottom,
+            VerticalAnchor.Center => AnchorToScreenBounds ? (bounds.Bottom + bounds.Top - iconSizeTiles.Y) / 2 : view.CenterY,
+            VerticalAnchor.North => bounds.Top - 1,
+            VerticalAnchor.Top => bounds.Top - iconSizeTiles.Y,
             _ => throw new Exception($"Invalid vertical anchor {VerticalAnchor}")
         };
 
         return viewOffset + new Vector2(x, y);
+    }
+
+    public ScreenLocationBounds GetScreenBounds(ViewRange view, float tileSize, Vector2i iconSize) {
+        Vector2 position = GetViewPosition(Vector2.Zero, view, tileSize, iconSize);
+        Vector2 iconSizeTiles = iconSize / tileSize;
+
+        return new ScreenLocationBounds(
+            position.X,
+            position.Y,
+            position.X + iconSizeTiles.X * RepeatX,
+            position.Y + iconSizeTiles.Y * RepeatY
+        );
     }
 
     public override string ToString() {
@@ -118,7 +156,10 @@ public sealed class ScreenLocation {
         if (mapControlSplitIndex > 0) {
             string mapControl = rangeSplit[0].Substring(0, mapControlSplitIndex);
 
-            if (char.IsAsciiLetter(mapControl[0]) && mapControl.IndexOfAny(['+', '-']) == -1 && !_keywords.Contains(mapControl)) {
+            if (char.IsAsciiLetter(mapControl[0]) &&
+                mapControl.IndexOf('+') == -1 &&
+                (mapControl.IndexOf('-') == -1 || mapControl.IndexOfAny(['[', ']', '_', '.']) != -1) &&
+                !_keywords.Contains(mapControl)) {
                 MapControl = mapControl;
                 coordinateSplit[0] = coordinateSplit[0].Substring(mapControlSplitIndex + 1);
             }
@@ -128,8 +169,42 @@ public sealed class ScreenLocation {
             X = 0;
             Y = 0;
 
-            (HorizontalAnchor, VerticalAnchor) = coordinateSplit[0].Trim() switch {
-                "CENTER" => (HorizontalAnchor.Center, VerticalAnchor.Center),
+            string coordinate = coordinateSplit[0].Trim();
+            if (!_keywords.Contains(coordinate)) {
+                ParseScreenLocCoordinate(coordinate, true);
+                return;
+            }
+
+            (HorizontalAnchor, VerticalAnchor) = coordinate switch {
+                var keyword when TryNormalizeScreenKeyword(keyword, out var normalizedKeyword) => normalizedKeyword switch {
+                    "CENTER" or "MIDDLE" => (HorizontalAnchor.Center, VerticalAnchor.Center),
+                    "WEST" => (HorizontalAnchor.West, VerticalAnchor.Center),
+                    "LEFT" => (HorizontalAnchor.Left, VerticalAnchor.Center),
+                    "EAST" => (HorizontalAnchor.East, VerticalAnchor.Center),
+                    "RIGHT" => (HorizontalAnchor.Right, VerticalAnchor.Center),
+                    "NORTH" => (HorizontalAnchor.Center, VerticalAnchor.North),
+                    "TOP" => (HorizontalAnchor.Center, VerticalAnchor.Top),
+                    "SOUTH" => (HorizontalAnchor.Center, VerticalAnchor.South),
+                    "BOTTOM" => (HorizontalAnchor.Center, VerticalAnchor.Bottom),
+                    "NORTHWEST" => (HorizontalAnchor.West, VerticalAnchor.North),
+                    "TOPLEFT" => (HorizontalAnchor.Left, VerticalAnchor.Top),
+                    "NORTHEAST" => (HorizontalAnchor.East, VerticalAnchor.North),
+                    "TOPRIGHT" => (HorizontalAnchor.Right, VerticalAnchor.Top),
+                    "SOUTHWEST" => (HorizontalAnchor.West, VerticalAnchor.South),
+                    "BOTTOMLEFT" => (HorizontalAnchor.Left, VerticalAnchor.Bottom),
+                    "SOUTHEAST" => (HorizontalAnchor.East, VerticalAnchor.South),
+                    "BOTTOMRIGHT" => (HorizontalAnchor.Right, VerticalAnchor.Bottom),
+                    _ => throw new Exception($"Invalid screen_loc {screenLoc}")
+                },
+                "CENTER" or "MIDDLE" => (HorizontalAnchor.Center, VerticalAnchor.Center),
+                "WEST" => (HorizontalAnchor.West, VerticalAnchor.Center),
+                "LEFT" => (HorizontalAnchor.Left, VerticalAnchor.Center),
+                "EAST" => (HorizontalAnchor.East, VerticalAnchor.Center),
+                "RIGHT" => (HorizontalAnchor.Right, VerticalAnchor.Center),
+                "NORTH" => (HorizontalAnchor.Center, VerticalAnchor.North),
+                "TOP" => (HorizontalAnchor.Center, VerticalAnchor.Top),
+                "SOUTH" => (HorizontalAnchor.Center, VerticalAnchor.South),
+                "BOTTOM" => (HorizontalAnchor.Center, VerticalAnchor.Bottom),
                 "NORTHWEST" => (HorizontalAnchor.West, VerticalAnchor.North),
                 "TOPLEFT" => (HorizontalAnchor.Left, VerticalAnchor.Top),
                 "NORTHEAST" => (HorizontalAnchor.East, VerticalAnchor.North),
@@ -161,6 +236,11 @@ public sealed class ScreenLocation {
                 case ' ' or '\t':
                     continue;
                 case '-' or '+' when (currentPiece.Length == 0 || currentPiece[^1] != ':'):
+                    if (currentPiece is ['+' or '-']) {
+                        currentPiece.Clear();
+                        break;
+                    }
+
                     // Start a new piece
                     pieces.Add(currentPiece.ToString());
                     currentPiece.Clear();
@@ -195,8 +275,12 @@ public sealed class ScreenLocation {
                 offsetStr = piece;
             }
 
+            if (TryNormalizeScreenKeyword(offsetStr, out var normalizedKeyword))
+                offsetStr = normalizedKeyword;
+
             switch (offsetStr) {
                 case "CENTER":
+                case "MIDDLE":
                     if (settingHorizontal)
                         HorizontalAnchor = HorizontalAnchor.Center;
                     else
@@ -240,8 +324,16 @@ public sealed class ScreenLocation {
 
                 // A normal number
                 default:
-                    if (!float.TryParse(offsetStr, out var offset))
+                    bool isPercent = offsetStr.EndsWith('%');
+                    string numberStr = isPercent ? offsetStr[..^1] : offsetStr;
+
+                    if (!float.TryParse(numberStr, out var offset)) {
                         Sawmill.Error($"Invalid offset {offsetStr} in {coordinate}");
+                        break;
+                    }
+
+                    if (isPercent)
+                        offset /= 100f;
 
                     coordinateResult += offset;
                     if (isFirstNumber) // Deal with us being 0-indexed while screen_loc is 1-indexed
@@ -266,5 +358,17 @@ public sealed class ScreenLocation {
         }
 
         return settingHorizontal != isHorizontal;
+    }
+
+    private bool TryNormalizeScreenKeyword(string keyword, out string normalizedKeyword) {
+        const string screenPrefix = "SCREEN_";
+        if (keyword.StartsWith(screenPrefix, StringComparison.Ordinal)) {
+            AnchorToScreenBounds = true;
+            normalizedKeyword = keyword[screenPrefix.Length..];
+            return true;
+        }
+
+        normalizedKeyword = keyword;
+        return false;
     }
 }

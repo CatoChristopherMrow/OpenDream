@@ -23,3 +23,17 @@
 		if(prob(p))
 			count++
 	ASSERT(count == n)
+
+	p = 560
+	count = 0
+	for(var/i in 1 to n)
+		if(prob(p))
+			count++
+	ASSERT(count == n)
+
+	p = -10
+	count = 0
+	for(var/i in 1 to n)
+		if(prob(p))
+			count++
+	ASSERT(count == 0)

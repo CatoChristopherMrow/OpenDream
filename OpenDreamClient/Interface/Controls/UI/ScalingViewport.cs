@@ -1,4 +1,5 @@
-﻿using Robust.Client.Graphics;
+﻿using OpenDreamClient.Rendering;
+using Robust.Client.Graphics;
 using Robust.Client.Input;
 using Robust.Client.UserInterface;
 using Robust.Client.UserInterface.CustomControls;
@@ -20,6 +21,7 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
     [Dependency] private IClyde _clyde = default!;
     [Dependency] private IInputManager _inputManager = default!;
     [Dependency] private IEntityManager _entityManager = default!;
+    [Dependency] private IOverlayManager _overlayManager = default!;
 
     // Internal viewport creation is deferred.
     private IClydeViewport? _viewport;
@@ -29,10 +31,35 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
     private ScalingViewportStretchMode _stretchMode = ScalingViewportStretchMode.Bilinear;
     private ScalingViewportRenderScaleMode _renderScaleMode = ScalingViewportRenderScaleMode.CeilInt;
     private int _fixedRenderScale = 1;
+    private string? _mapControlId;
+    private Vector2i _mapControlFullSize;
 
     private readonly List<CopyPixelsDelegate<Rgba32>> _queuedScreenshots = new();
 
     public int CurrentRenderScale => _curRenderScale;
+    public string? MapControlId {
+        get => _mapControlId;
+        set {
+            if (_mapControlId == value)
+                return;
+
+            _mapControlId = value;
+            InvalidateViewport();
+        }
+    }
+
+    public Vector2i MapControlClipOffset { get; set; }
+
+    public Vector2i MapControlFullSize {
+        get => _mapControlFullSize;
+        set {
+            if (_mapControlFullSize == value)
+                return;
+
+            _mapControlFullSize = value;
+            InvalidateViewport();
+        }
+    }
 
     /// <summary>
     ///     The eye to render.
@@ -116,9 +143,8 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
     }
 
     protected override void Draw(IRenderHandle handle) {
-        EnsureViewportCreated();
-
-        DebugTools.AssertNotNull(_viewport);
+        if (!EnsureViewportCreated())
+            return;
 
         _viewport!.Render();
 
@@ -134,10 +160,24 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
             _queuedScreenshots.Clear();
         }
 
-        var drawBox = GetDrawBox();
+        var drawBox = MapControlId != null
+            ? UIBox2i.FromDimensions(Vector2i.Zero, PixelSize)
+            : GetDrawBox();
         var drawBoxGlobal = drawBox.Translated(GlobalPixelPosition);
         _viewport.RenderScreenOverlaysBelow(handle, this, drawBoxGlobal);
-        handle.DrawingHandleScreen.DrawTextureRect(_viewport.RenderTarget.Texture, drawBox);
+        var texture = _viewport.RenderTarget.Texture;
+        UIBox2? textureSubRegion = null;
+        if (MapControlId != null &&
+            _overlayManager.TryGetOverlay(typeof(DreamViewOverlay), out var overlay) &&
+            overlay is DreamViewOverlay dreamOverlay) {
+            var fullSize = MapControlFullSize.X > 0 && MapControlFullSize.Y > 0
+                ? MapControlFullSize
+                : drawBox.Size;
+            texture = dreamOverlay.RenderScreenObjectsForMapControl(handle.DrawingHandleWorld, fullSize, MapControlId) ?? texture;
+            textureSubRegion = UIBox2.FromDimensions(MapControlClipOffset, drawBox.Size);
+        }
+
+        handle.DrawingHandleScreen.DrawTextureRectRegion(texture, drawBox, textureSubRegion);
         _viewport.RenderScreenOverlaysAbove(handle, this, drawBoxGlobal);
     }
 
@@ -147,9 +187,7 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
 
     // Draw box in pixel coords to draw the viewport at.
     public UIBox2i GetDrawBox() {
-        DebugTools.AssertNotNull(_viewport);
-
-        var vpSize = _viewport!.Size;
+        var vpSize = _viewport?.Size ?? new Vector2i(Math.Max(ViewportSize.X, 1), Math.Max(ViewportSize.Y, 1));
         var ourSize = (Vector2)PixelSize;
 
         if (FixedStretchSize == null) {
@@ -172,7 +210,9 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
         DebugTools.AssertNull(_viewport);
 
         var vpSizeBase = ViewportSize;
-        var ourSize = PixelSize;
+        var ourSize = MapControlId != null && MapControlFullSize.X > 0 && MapControlFullSize.Y > 0
+            ? MapControlFullSize
+            : PixelSize;
         var (ratioX, ratioY) = ourSize / (Vector2) vpSizeBase;
         var ratio = Math.Min(ratioX, ratioY);
         var renderScale = 1;
@@ -207,6 +247,12 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
     protected override void Resized() {
         base.Resized();
 
+        // TGUI-hosted BYOND map controls emulate browser clipping by changing
+        // their visible rectangle during scroll. Keep their render target based
+        // on the unclipped DOM anchor so scroll clipping does not recreate it.
+        if (MapControlId != null && MapControlFullSize.X > 0 && MapControlFullSize.Y > 0)
+            return;
+
         InvalidateViewport();
     }
 
@@ -219,7 +265,8 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
         if (_eye == null)
             return default;
 
-        EnsureViewportCreated();
+        if (!EnsureViewportCreated())
+            return default;
 
         Matrix3x2.Invert(LocalToScreenMatrix(), out var matrix);
         coords = Vector2.Transform(coords, matrix);
@@ -231,7 +278,8 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
         if (_eye == null)
             return default;
 
-        EnsureViewportCreated();
+        if (!EnsureViewportCreated())
+            return default;
 
         Matrix3x2.Invert(GetLocalToScreenMatrix(), out var matrix);
         coords = Vector2.Transform(coords, matrix);
@@ -246,7 +294,8 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
         if (_eye == null)
             return default;
 
-        EnsureViewportCreated();
+        if (!EnsureViewportCreated())
+            return default;
 
         var vpLocal = _viewport!.WorldToLocal(map);
 
@@ -271,21 +320,28 @@ public sealed partial class ScalingViewport : Control, IViewportControl {
         return scale * translate;
     }
 
-    private void EnsureViewportCreated() {
+    private bool EnsureViewportCreated() {
+        if (ViewportSize.X <= 0 || ViewportSize.Y <= 0 || PixelSize.X <= 0 || PixelSize.Y <= 0)
+            return false;
+
         if (_viewport == null) {
             RegenerateViewport();
         }
 
         DebugTools.AssertNotNull(_viewport);
+        return true;
     }
 
     public Matrix3x2 GetWorldToScreenMatrix() {
-        EnsureViewportCreated();
+        if (!EnsureViewportCreated())
+            return Matrix3x2.Identity;
+
         return _viewport!.GetWorldToLocalMatrix() * GetLocalToScreenMatrix();
     }
 
     public Matrix3x2 GetLocalToScreenMatrix() {
-        EnsureViewportCreated();
+        if (!EnsureViewportCreated())
+            return Matrix3x2.Identity;
 
         var drawBox = GetDrawBox();
         var scaleFactor = drawBox.Size / (Vector2)_viewport!.Size;

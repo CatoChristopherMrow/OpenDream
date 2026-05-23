@@ -7,9 +7,11 @@ using Robust.Client.Graphics;
 using Robust.Shared.Prototypes;
 using OpenDreamClient.Resources;
 using OpenDreamClient.Resources.ResourceTypes;
+using OpenDreamShared.Network.Messages;
 using OpenDreamShared.Resources;
 using Robust.Client.Player;
 using Robust.Shared.Map;
+using Robust.Shared.Serialization;
 using Robust.Shared.Timing;
 
 namespace OpenDreamClient.Rendering;
@@ -37,12 +39,17 @@ internal sealed partial class ClientAppearanceSystem : SharedAppearanceSystem {
             var frames = Frames;
             if (_animationFrame >= frames.Length)
                 return -1;
-            if (gameTiming.CurTime.Ticks >= _nextFrame) {
+
+            while (gameTiming.CurTime.Ticks >= _nextFrame) {
                 _animationFrame++;
                 if (_animationFrame >= frames.Length)
                     return -1;
 
-                _nextFrame += frames[_animationFrame].Delay.Ticks;
+                var delayTicks = frames[_animationFrame].Delay.Ticks;
+                if (delayTicks <= 0)
+                    return _animationFrame;
+
+                _nextFrame += delayTicks;
             }
 
             return _animationFrame;
@@ -70,13 +77,14 @@ internal sealed partial class ClientAppearanceSystem : SharedAppearanceSystem {
     [Dependency] private IMapManager _mapManager = default!;
     [Dependency] private MapSystem _mapSystem = default!;
     [Dependency] private IPrototypeManager _protoManager = default!;
+    [Dependency] private IRobustSerializer _serializer = default!;
     [Dependency] private ClientVerbSystem _verbSystem = default!;
 
     public override void Initialize() {
         UpdatesOutsidePrediction = true;
 
-        SubscribeNetworkEvent<NewAppearanceEvent>(OnNewAppearance);
-        SubscribeNetworkEvent<RemoveAppearanceEvent>(e => _appearances.Remove(e.AppearanceId));
+        SubscribeNetworkEvent<NewAppearancesEvent>(OnNewAppearances);
+        SubscribeNetworkEvent<RemoveAppearancesEvent>(OnRemoveAppearances);
         SubscribeNetworkEvent<AnimationEvent>(OnAnimation);
         SubscribeNetworkEvent<FlickEvent>(OnFlick);
         SubscribeLocalEvent<DMISpriteComponent, WorldAABBEvent>(OnWorldAABB);
@@ -153,33 +161,58 @@ internal sealed partial class ClientAppearanceSystem : SharedAppearanceSystem {
         return icon;
     }
 
-    private void OnNewAppearance(NewAppearanceEvent e) {
-        uint appearanceId = e.Appearance.MustGetId();
-        _appearances[appearanceId] = e.Appearance;
+    private void OnNewAppearances(NewAppearancesEvent e) {
+        var decompressed = MsgAllAppearances.DecompressAppearances(new(e.Data));
+        var count = decompressed.ReadInt32();
 
-        // If we haven't received the MsgAllAppearances yet, leave this initialization for later
-        if (_receivedAllAppearancesMsg) {
-            _appearances[appearanceId].ResolveOverlays(this);
+        for (int i = 0; i < count; i++) {
+            var appearance = new ImmutableAppearance(decompressed, _serializer);
+            uint appearanceId = appearance.MustGetId();
+            _appearances[appearanceId] = appearance;
 
-            if (_appearanceLoadCallbacks.TryGetValue(appearanceId, out var callbacks)) {
-                foreach (var callback in callbacks) callback(_appearances[appearanceId]);
+            // If we haven't received the MsgAllAppearances yet, leave this initialization for later
+            if (_receivedAllAppearancesMsg) {
+                _appearances[appearanceId].ResolveOverlays(this);
+
+                if (_appearanceLoadCallbacks.TryGetValue(appearanceId, out var callbacks)) {
+                    foreach (var callback in callbacks) callback(_appearances[appearanceId]);
+                }
             }
+        }
+    }
+
+    private void OnRemoveAppearances(RemoveAppearancesEvent e) {
+        foreach (var appearanceId in e.Appearances) {
+            _appearances.Remove(appearanceId);
+            _appearanceLoadCallbacks.Remove(appearanceId);
         }
     }
 
     private void OnAnimation(AnimationEvent e) {
         if(e.Entity == NetEntity.Invalid && e.TurfId is not null) { //it's a turf or area
-            if(_turfIcons.TryGetValue(e.TurfId.Value-1, out var turfIcon))
+            if(_turfIcons.TryGetValue(e.TurfId.Value-1, out var turfIcon)) {
+                if (e.Stop) {
+                    turfIcon.StopAppearanceAnimation(e.Tag);
+                    return;
+                }
+
                 LoadAppearance(e.TargetAppearanceId, targetAppearance => {
-                    turfIcon.StartAppearanceAnimation(targetAppearance, e.Duration, e.Easing, e.Loop, e.Flags, e.Delay, e.ChainAnim);
+                    turfIcon.StartAppearanceAnimation(targetAppearance, e.Duration, e.Easing, e.Loop, e.Flags, e.Delay, e.ChainAnim, e.Tag, e.Command, null);
                 });
+            }
         } else { //image or movable
             EntityUid ent = _entityManager.GetEntity(e.Entity);
             if (!_entityManager.TryGetComponent<DMISpriteComponent>(ent, out var sprite))
                 return;
 
+            if (e.Stop) {
+                sprite.Icon.StopAppearanceAnimation(e.Tag);
+                return;
+            }
+
             LoadAppearance(e.TargetAppearanceId, targetAppearance => {
-                sprite.Icon.StartAppearanceAnimation(targetAppearance, e.Duration, e.Easing, e.Loop, e.Flags, e.Delay, e.ChainAnim);
+                sprite.Icon.StartAppearanceAnimation(targetAppearance, e.Duration, e.Easing, e.Loop, e.Flags, e.Delay, e.ChainAnim, e.Tag, e.Command,
+                    command => _interfaceManager.RunCommand(command, atomContext: e.Entity, atomRefContext: e.AtomRef));
             });
         }
     }

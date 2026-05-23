@@ -69,7 +69,7 @@ namespace OpenDreamRuntime {
 
         // Execute this proc. This will behave as if the proc has `set waitfor = 0`
         [MustDisposeResource]
-        public DreamValue Spawn(DreamObject src, [HandlesResourceDisposal] DreamProcArguments arguments, DreamObject? usr = null) {
+        public DreamValue Spawn(DreamObject? src, [HandlesResourceDisposal] DreamProcArguments arguments, DreamObject? usr = null) {
             var context = new DreamThread(ToString());
             var state = CreateState(context, src, usr, arguments);
             context.PushProcState(state);
@@ -88,8 +88,7 @@ namespace OpenDreamRuntime {
                 case "invisibility":
                     return new DreamValue(Invisibility);
                 case "hidden":
-                    Logger.GetSawmill("opendream.dmproc").Warning("The 'hidden' field on verbs will always return null.");
-                    return DreamValue.Null;
+                    return new DreamValue((Attributes & ProcAttributes.Hidden) == ProcAttributes.Hidden ? 1 : 0);
                 default:
                     throw new Exception($"Cannot get field \"{field}\" from {OwningType}.{Name}()");
             }
@@ -178,6 +177,10 @@ namespace OpenDreamRuntime {
 
         // Most implementations won't require this, so give it a default
         public virtual void ReturnedInto(DreamValue value) {}
+
+        public bool ResultReferences(DreamObject dreamObject) {
+            return Result.TryGetValueAsDreamObject<DreamObject>(out var resultObject) && ReferenceEquals(resultObject, dreamObject);
+        }
 
         public virtual void Cancel() {}
 
@@ -409,12 +412,129 @@ namespace OpenDreamRuntime {
             }
 
             // Maybe a bit of a hack? If the state got deferred to another thread it shouldn't be disposed.
-            if (dispose && _current.Thread == this) {
+            if (dispose && _current?.Thread == this) {
                 _current.Dispose();
             }
 
             if (!_stack.TryPop(out _current)) {
                 _current = null;
+            }
+        }
+
+        public int CountStackReferences(DreamObject dreamObject) {
+            var count = CountStackReferences(_current, dreamObject);
+
+            foreach (var state in _stack) {
+                count += CountStackReferences(state, dreamObject);
+            }
+
+            if (LastAnimatedObject is { } lastAnimatedObject &&
+                lastAnimatedObject.TryGetValueAsDreamObject(out var animatedObject) &&
+                ReferenceEquals(animatedObject, dreamObject)) {
+                count++;
+            }
+
+            return count;
+        }
+
+        public int CountActiveArgumentStackReferences(DreamObject dreamObject) {
+            var count = CountActiveArgumentStackReferences(_current, dreamObject);
+
+            foreach (var state in _stack) {
+                count += CountActiveArgumentStackReferences(state, dreamObject);
+            }
+
+            return count;
+        }
+
+        public int CountInactiveStackReferences(DreamObject dreamObject) {
+            var count = CountInactiveStackReferences(_current, dreamObject);
+
+            foreach (var state in _stack) {
+                count += CountInactiveStackReferences(state, dreamObject);
+            }
+
+            return count;
+        }
+
+        public string DescribeReferences(DreamObject dreamObject) {
+            var builder = new StringBuilder();
+            AppendReferenceDescription(builder, "current", _current, dreamObject);
+
+            var index = 0;
+            foreach (var state in _stack) {
+                AppendReferenceDescription(builder, $"stack[{index++}]", state, dreamObject);
+            }
+
+            if (LastAnimatedObject is { } lastAnimatedObject &&
+                lastAnimatedObject.TryGetValueAsDreamObject(out var animatedObject) &&
+                ReferenceEquals(animatedObject, dreamObject)) {
+                builder.Append(" lastAnimatedObject=1");
+            }
+
+            return builder.ToString();
+        }
+
+        private static int CountStackReferences(ProcState? state, DreamObject dreamObject) {
+            if (state == null)
+                return 0;
+
+            var count = 0;
+            if (state.ResultReferences(dreamObject))
+                count++;
+
+            if (state is DMProcState dmProcState)
+                count += dmProcState.CountStackReferences(dreamObject);
+
+            return count;
+        }
+
+        private static int CountActiveArgumentStackReferences(ProcState? state, DreamObject dreamObject) {
+            if (state is not DMProcState dmProcState)
+                return 0;
+
+            return dmProcState.CountActiveArgumentStackReferences(dreamObject);
+        }
+
+        private static int CountInactiveStackReferences(ProcState? state, DreamObject dreamObject) {
+            if (state is not DMProcState dmProcState)
+                return 0;
+
+            return dmProcState.CountFrameReferences(dreamObject).InactiveStack;
+        }
+
+        private static void AppendReferenceDescription(StringBuilder builder, string name, ProcState? state, DreamObject dreamObject) {
+            if (state == null)
+                return;
+
+            var result = state.ResultReferences(dreamObject) ? 1 : 0;
+            if (state is DMProcState dmProcState) {
+                var refs = dmProcState.CountFrameReferences(dreamObject);
+                builder.Append(' ');
+                builder.Append(name);
+                builder.Append("={proc=");
+                builder.Append(state.Proc);
+                builder.Append(",args=");
+                builder.Append(refs.Arguments);
+                builder.Append(",locals=");
+                builder.Append(refs.Locals);
+                builder.Append(",activeStack=");
+                builder.Append(refs.ActiveStack);
+                builder.Append(",inactiveStack=");
+                builder.Append(refs.InactiveStack);
+                builder.Append(",src=");
+                builder.Append(refs.Instance);
+                builder.Append(",usr=");
+                builder.Append(refs.Usr);
+                builder.Append(",result=");
+                builder.Append(refs.Result);
+                builder.Append('}');
+            } else if (result != 0) {
+                builder.Append(' ');
+                builder.Append(name);
+                builder.Append("={proc=");
+                builder.Append(state.Proc);
+                builder.Append(",result=1}");
             }
         }
 
@@ -506,11 +626,12 @@ namespace OpenDreamRuntime {
                 line = source.Item2;
             }
 
-            bool inWorldError = _current?.Proc?.OwningType == dreamMan.WorldInstance.ObjectDefinition.TreeEntry && _current.Proc.Name == "Error";
+            var worldTreeEntry = dreamMan.WorldInstance.Deleted ? null : dreamMan.WorldInstance.ObjectDefinition.TreeEntry;
+            bool inWorldError = worldTreeEntry != null && _current?.Proc?.OwningType == worldTreeEntry && _current.Proc.Name == "Error";
             if (!inWorldError && _stack.Count > 0) {
                 //if we're not directly in /world.Error, check the stack
                 var top = _stack.ElementAt(_stack.Count - 1); //only the top of the stack can be /world/Error
-                inWorldError = top.Proc?.OwningType == dreamMan.WorldInstance.ObjectDefinition.TreeEntry && top.Proc?.Name == "Error";
+                inWorldError = worldTreeEntry != null && top.Proc?.OwningType == worldTreeEntry && top.Proc?.Name == "Error";
             }
 
             dreamMan.HandleException(exception, msg, file, line, inWorldError: inWorldError);
@@ -534,11 +655,11 @@ namespace OpenDreamRuntime {
         private bool TryCatchException(Exception exception) {
             if (!InspectStack().Any(x => x.IsCatching())) return false;
 
-            while (!_current.IsCatching()) {
+            while (_current != null && !_current.IsCatching()) {
                 PopProcState();
             }
 
-            _current.CatchException(exception);
+            _current?.CatchException(exception);
             return true;
         }
     }

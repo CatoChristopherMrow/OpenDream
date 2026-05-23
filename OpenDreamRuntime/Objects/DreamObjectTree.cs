@@ -21,9 +21,9 @@ using MethodImplOptions = System.Runtime.CompilerServices.MethodImplOptions;
 namespace OpenDreamRuntime.Objects;
 
 public sealed partial class DreamObjectTree {
-    public TreeEntry[] Types { get; private set; }
+    public TreeEntry[] Types { get; private set; } = Array.Empty<TreeEntry>();
     public List<DreamProc> Procs { get; } = new();
-    public List<string> Strings { get; private set; } //TODO: Store this somewhere else
+    public List<string> Strings { get; private set; } = new(); //TODO: Store this somewhere else
     public DreamProc? GlobalInitProc { get; private set; }
 
     public TreeEntry Root { get; private set; } = default!;
@@ -42,6 +42,7 @@ public sealed partial class DreamObjectTree {
     public TreeEntry Regex { get; private set; } = default!;
     public TreeEntry Filter { get; private set; } = default!;
     public TreeEntry Vector { get; private set; } = default!;
+    public TreeEntry PixLoc { get; private set; } = default!;
     public TreeEntry Icon { get; private set; } = default!;
     public TreeEntry Image { get; private set; } = default!;
     public TreeEntry MutableAppearance { get; private set; } = default!;
@@ -318,7 +319,9 @@ public sealed partial class DreamObjectTree {
 
         //First pass: Create types and set them up for initialization
         Types[0] = Root;
-        var pathToType = new Dictionary<string, TreeEntry>(types.Length);
+        var pathToType = new Dictionary<string, TreeEntry>(types.Length) {
+            [Root.Path] = Root
+        };
         for (int i = 1; i < Types.Length; i++) {
             var path = types[i].Path;
             var type = new TreeEntry(path, i);
@@ -344,6 +347,7 @@ public sealed partial class DreamObjectTree {
         Regex = GetTreeEntry("/regex");
         Filter = GetTreeEntry("/dm_filter");
         Vector = GetTreeEntry("/vector");
+        PixLoc = GetTreeEntry("/pixloc");
         Icon = GetTreeEntry("/icon");
         Image = GetTreeEntry("/image");
         MutableAppearance = GetTreeEntry("/mutable_appearance");
@@ -564,8 +568,8 @@ public sealed class TreeEntry {
     public readonly string Name;
     public readonly string Path;
     public readonly int Id;
-    public DreamObjectDefinition ObjectDefinition;
-    public TreeEntry ParentEntry;
+    public DreamObjectDefinition ObjectDefinition = default!;
+    public TreeEntry? ParentEntry;
     public List<int>? InheritingTypes;
 
     /// <summary>

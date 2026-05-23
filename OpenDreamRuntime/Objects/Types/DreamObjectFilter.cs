@@ -1,4 +1,5 @@
 ﻿using OpenDreamShared.Dream;
+using OpenDreamRuntime.Procs.Native;
 using Robust.Shared.Serialization.Manager;
 using Robust.Shared.Serialization.Markdown.Mapping;
 
@@ -9,7 +10,7 @@ public sealed class DreamObjectFilter(DreamObjectDefinition objectDefinition) : 
 
     public override bool ShouldCallNew => false;
 
-    public DreamFilter Filter;
+    public DreamFilter Filter = null!;
 
     protected override void HandleDeletion() {
         FilterAttachedTo.Remove(Filter);
@@ -39,14 +40,33 @@ public sealed class DreamObjectFilter(DreamObjectDefinition objectDefinition) : 
 
     public static DreamObjectFilter? TryCreateFilter(DreamObjectTree objectTree, IEnumerable<(string Name, DreamValue Value)> properties) {
         Type? filterType = null;
+        string? filterTypeName = null;
+        string? filterName = null;
+        ColorMatrix color = ColorMatrix.Identity;
+        float space = 0f;
         MappingDataNode attributes = new();
 
         foreach (var property in properties) {
             if (property.Value.IsNull)
                 continue;
 
-            if (property.Name == "type" && property.Value.TryGetValueAsString(out var filterTypeName)) {
-                filterType = DreamFilter.GetType(filterTypeName);
+            if (property.Name == "type" && property.Value.TryGetValueAsString(out var typeName)) {
+                filterTypeName = typeName;
+                filterType = DreamFilter.GetType(typeName);
+            }
+
+            if (property.Name == "name") {
+                property.Value.TryGetValueAsString(out filterName);
+            } else if (property.Name == "space") {
+                property.Value.TryGetValueAsFloat(out space);
+            } else if (property.Name == "color") {
+                if (property.Value.TryGetValueAsString(out var colorString) && ColorHelpers.TryParseColor(colorString, out var basicColor)) {
+                    color = new ColorMatrix(basicColor);
+                } else if (property.Value.TryGetValueAsDreamList(out var colorList) && DreamProcNativeHelpers.TryParseColorMatrix(colorList, out var colorMatrix)) {
+                    color = colorMatrix;
+                } else {
+                    throw new Exception($"Value {property.Value} was not a color matrix");
+                }
             }
 
             attributes.Add(property.Name, new DreamValueDataNode(property.Value));
@@ -54,6 +74,18 @@ public sealed class DreamObjectFilter(DreamObjectDefinition objectDefinition) : 
 
         if (filterType == null)
             return null;
+
+        if (filterType == typeof(DreamFilterColor)) {
+            var colorFilter = objectTree.CreateObject<DreamObjectFilter>(objectTree.Filter);
+            colorFilter.Filter = new DreamFilterColor {
+                FilterType = filterTypeName!,
+                FilterName = filterName,
+                Color = color,
+                Space = space
+            };
+
+            return colorFilter;
+        }
 
         var serializationManager = IoCManager.Resolve<ISerializationManager>();
 

@@ -63,7 +63,7 @@ public sealed class DreamObjectVector(DreamObjectDefinition definition) : DreamO
                 return;
             }
         } else if (arg1.TryGetValueAsDreamList(out var vectorList)) { // list(X, Y) or list(X, Y, Z)
-            var components = vectorList.GetValues();
+            var components = vectorList.EnumerateValues().ToList();
 
             if (components.Count is 2 or 3 && components.All(v => v.Type == DreamValue.DreamValueType.Float)) {
                 X = components[0].UnsafeGetValueAsFloat();
@@ -152,6 +152,7 @@ public sealed class DreamObjectVector(DreamObjectDefinition definition) : DreamO
         } else if (b.TryGetValueAsDreamObject<DreamObjectVector>(out var right)) {
             X *= right.X;
             Y *= right.Y;
+            Is3D = Is3D || right.Is3D;
             Z *= right.Z;
             IncRef();
             return new DreamValue(this);
@@ -201,6 +202,7 @@ public sealed class DreamObjectVector(DreamObjectDefinition definition) : DreamO
                 throw new DivideByZeroException("Cannot divide vector by zero vector component");
             X /= right.X;
             Y /= right.Y;
+            Is3D = Is3D || right.Is3D;
             Z = right.Z == 0 ? 0 : Z / right.Z;
             IncRef();
             return new DreamValue(this);
@@ -213,8 +215,8 @@ public sealed class DreamObjectVector(DreamObjectDefinition definition) : DreamO
         if (b.TryGetValueAsDreamObject<DreamObjectVector>(out var right)) {
             X += right.X;
             Y += right.Y;
-            Z += right.Z;
             Is3D = Is3D || right.Is3D;
+            Z += right.Z;
 
             IncRef();
             return new DreamValue(this);
@@ -227,8 +229,8 @@ public sealed class DreamObjectVector(DreamObjectDefinition definition) : DreamO
         if (b.TryGetValueAsDreamObject<DreamObjectVector>(out var right)) {
             X -= right.X;
             Y -= right.Y;
-            Z -= right.Z;
             Is3D = Is3D || right.Is3D;
+            Z -= right.Z;
 
             IncRef();
             return new DreamValue(this);
@@ -238,6 +240,23 @@ public sealed class DreamObjectVector(DreamObjectDefinition definition) : DreamO
     }
 
     #endregion Operators
+
+    public override DreamValue OperatorIndex(DreamValue index, DMProcState state) {
+        if (index.TryGetValueAsInteger(out var integerIndex)) {
+            return integerIndex switch {
+                1 => new DreamValue(X),
+                2 => new DreamValue(Y),
+                3 when Is3D => new DreamValue(Z),
+                _ => throw new IndexOutOfRangeException("Vector index out of bounds")
+            };
+        }
+
+        throw new InvalidOperationException($"Cannot index {this} with {index}");
+    }
+
+    public override void OperatorIndexAssign(DreamValue index, DMProcState state, DreamValue value) {
+        throw new InvalidOperationException("Cannot write to indexed value in this type of list");
+    }
 
     protected override bool TryGetVar(string varName, out DreamValue value) {
         switch (varName) {
@@ -289,8 +308,7 @@ public sealed class DreamObjectVector(DreamObjectDefinition definition) : DreamO
                 Y = value.UnsafeGetValueAsFloat();
                 break;
             case "z":
-                Z = value.UnsafeGetValueAsFloat();
-                break;
+                throw new Exception("bad vector size");
             default:
                 // Hide the base vars
                 throw new Exception($"Invalid vector variable \"{varName}\"");

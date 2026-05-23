@@ -114,7 +114,9 @@ public sealed partial class WindowDescriptor : ControlDescriptor {
         if (!attributes.TryGet("type", out var elementType) || elementType is not ValueDataNode elementTypeValue)
             return null;
 
-        if (elementTypeValue.Value == "MAIN") {
+        string elementTypeName = elementTypeValue.Value.ToUpperInvariant();
+
+        if (elementTypeName == "MAIN") {
             attributes.Remove("name");
             attributes["name"] = new ValueDataNode(Name.Value);
 
@@ -123,7 +125,7 @@ public sealed partial class WindowDescriptor : ControlDescriptor {
             return this;
         }
 
-        Type? descriptorType = elementTypeValue.Value switch {
+        Type? descriptorType = elementTypeName switch {
             "MAP" => typeof(ControlDescriptorMap),
             "CHILD" => typeof(ControlDescriptorChild),
             "OUTPUT" => typeof(ControlDescriptorOutput),
@@ -287,6 +289,10 @@ public sealed partial class ControlDescriptorMap : ControlDescriptor {
     public DMFPropertyString OnShowCommand = new("");
     [DataField("on-hide")]
     public DMFPropertyString OnHideCommand = new("");
+    [DataField("opendream-clip-offset")]
+    public DMFPropertyPos OpenDreamClipOffset = new(0, 0);
+    [DataField("opendream-full-size")]
+    public DMFPropertySize OpenDreamFullSize = new(0, 0);
 
 }
 

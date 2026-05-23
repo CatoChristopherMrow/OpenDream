@@ -1,3 +1,4 @@
+using System.IO;
 using System.Threading.Tasks;
 using System.Web;
 using DMCompiler.Bytecode;
@@ -10,6 +11,7 @@ using OpenDreamShared.Dream;
 using OpenDreamShared.Network.Messages;
 using Robust.Shared.Enums;
 using Robust.Shared.Player;
+using Robust.Shared.Utility;
 using SpaceWizards.Sodium;
 
 namespace OpenDreamRuntime;
@@ -20,6 +22,7 @@ public sealed partial class DreamConnection {
     [Dependency] private DreamObjectTree _objectTree = default!;
     [Dependency] private DreamResourceManager _resourceManager = default!;
     [Dependency] private IEntitySystemManager _entitySystemManager = default!;
+    [Dependency] private IEntityManager _entityManager = default!;
     [Dependency] private ISharedPlayerManager _playerManager = default!;
 
     private readonly ServerScreenOverlaySystem? _screenOverlaySystem;
@@ -31,6 +34,7 @@ public sealed partial class DreamConnection {
     [ViewVariables] public TimeSpan? LastClickTime { get; set; }
 
     [ViewVariables] public ICommonSession? Session { get; private set; }
+
     [ViewVariables] public DreamObjectClient? Client { get; private set; }
     [ViewVariables] public string Key { get; }
 
@@ -85,16 +89,22 @@ public sealed partial class DreamConnection {
     [ViewVariables] private readonly Dictionary<int, Action<DreamValue>> _promptEvents = new();
     [ViewVariables] private int _nextPromptEvent = 1;
     private readonly Dictionary<string, DreamResource> _permittedBrowseRscFiles = new();
+    private readonly HashSet<string> _pendingBrowseRscRequests = new();
     private DreamObjectMob? _mob;
 
     private readonly ISawmill _sawmill = Logger.GetSawmill("opendream.connection");
+
+    private static string NormalizeBrowseRscFilename(string filename) {
+        // BYOND's browse_rsc() cache uses the final filename even if a path was supplied.
+        return new ResPath(filename).Filename;
+    }
 
     public string? SelectedStatPanel {
         get => _selectedStatPanel;
         set {
             _selectedStatPanel = value;
 
-            var msg = new MsgSelectStatPanel() { StatPanel = value };
+            var msg = new MsgSelectStatPanel() { StatPanel = value ?? string.Empty };
             Session?.Channel.SendMessage(msg);
         }
     }
@@ -168,6 +178,7 @@ public sealed partial class DreamConnection {
         MsgUpdateClientInfo msg = new() {
             IconSize = _dreamManager.WorldInstance.IconSize,
             View = Client!.View,
+            MapFormat = _dreamManager.WorldInstance.MapFormat,
             ShowPopupMenus = Client!.ShowPopupMenus,
             CursorResource = Client!.CursorIcon?.Id ?? 0
         };
@@ -186,7 +197,7 @@ public sealed partial class DreamConnection {
         if (_outputStatPanel == null || !_statPanels.ContainsKey(_outputStatPanel))
             SetOutputStatPanel("Stats");
 
-        _statPanels[_outputStatPanel].Add((name, value, atomRef));
+        _statPanels[_outputStatPanel!].Add((name, value, atomRef));
     }
 
     public void HandleMsgSelectStatPanel(MsgSelectStatPanel message) {
@@ -254,7 +265,10 @@ public sealed partial class DreamConnection {
                     Channel = sound.Channel,
                     Volume = sound.Volume,
                     Offset = sound.Offset,
-                    Repeat = sound.Repeat
+                    Repeat = sound.Repeat,
+                    Atom = GetSoundAtom(sound),
+                    OffsetPosition = GetSoundOffset(sound),
+                    Falloff = GetSoundFloatVar(sound, "falloff")
                 }
             };
 
@@ -289,6 +303,33 @@ public sealed partial class DreamConnection {
         message = StringFormatDecoder.RemoveFormatting(message);
 
         OutputControl(message, null);
+    }
+
+    private NetEntity GetSoundAtom(DreamObjectSound sound) {
+        using DreamValue atomValue = sound.GetVariable("atom");
+
+        return atomValue.TryGetValueAsDreamObject<DreamObjectMovable>(out var movable)
+            ? _entityManager.GetNetEntity(movable.Entity)
+            : NetEntity.Invalid;
+    }
+
+    private static Vector3 GetSoundOffset(DreamObjectSound sound) {
+        float x = GetSoundFloatVar(sound, "x");
+        float y = GetSoundFloatVar(sound, "y");
+        float z = GetSoundFloatVar(sound, "z");
+
+        using DreamValue transformValue = sound.GetVariable("transform");
+        if (transformValue.TryGetValueAsDreamObject<DreamObjectMatrix>(out var matrix)) {
+            x += matrix.C;
+            y += matrix.F;
+        }
+
+        return new Vector3(x, y, z);
+    }
+
+    private static float GetSoundFloatVar(DreamObjectSound sound, string varName) {
+        using DreamValue value = sound.GetVariable(varName);
+        return value.TryGetValueAsFloat(out var result) ? result : 0f;
     }
 
     public void OutputControl(string message, string? control) {
@@ -438,30 +479,61 @@ public sealed partial class DreamConnection {
         if (resource.ResourceData == null)
             return;
 
+        filename = NormalizeBrowseRscFilename(filename);
         var msg = new MsgBrowseResource() {
             Filename = filename,
             DataHash = CryptoGenericHashBlake2B.Hash(32, resource.ResourceData!, ReadOnlySpan<byte>.Empty)
         };
         _permittedBrowseRscFiles[filename] = resource;
 
+        if (!string.IsNullOrEmpty(resource.ResourcePath)) {
+            var resourceFilename = NormalizeBrowseRscFilename(Path.GetFileName(resource.ResourcePath));
+            _permittedBrowseRscFiles.TryAdd(resourceFilename, resource);
+        }
+
+        if (_pendingBrowseRscRequests.Remove(filename)) {
+            SendBrowseResourceResponse(filename, resource);
+        }
+
+        Session?.Channel.SendMessage(msg);
+    }
+
+    private void SendBrowseResourceResponse(string filename, DreamResource resource) {
+        var msg = new MsgBrowseResourceResponse() {
+            Filename = filename,
+            Data = resource.ResourceData!, //honestly if this is null, something mega fucked up has happened and we should error hard
+        };
         Session?.Channel.SendMessage(msg);
     }
 
     public void HandleBrowseResourceRequest(string filename) {
+        filename = NormalizeBrowseRscFilename(filename);
+
         if(_permittedBrowseRscFiles.TryGetValue(filename, out var dreamResource)) {
-            var msg = new MsgBrowseResourceResponse() {
-                Filename = filename,
-                Data = dreamResource.ResourceData!, //honestly if this is null, something mega fucked up has happened and we should error hard
-            };
-            _permittedBrowseRscFiles.Remove(filename);
-            Session?.Channel.SendMessage(msg);
+            SendBrowseResourceResponse(filename, dreamResource);
+        } else if (_resourceManager.TryLoadResource(filename, out dreamResource) && dreamResource.ResourceData != null) {
+            // BYOND clients can use resource refs such as [0xc000001] directly
+            // in browser HTML. Treat them as an implicit browse_rsc permission.
+            _permittedBrowseRscFiles[filename] = dreamResource;
+            SendBrowseResourceResponse(filename, dreamResource);
         } else {
-            _sawmill.Error($"Client({Session}) requested a browse_rsc file they had not been permitted to request ({filename}).");
+            _pendingBrowseRscRequests.Add(filename);
+            _sawmill.Debug($"Client({Session}) requested a browse_rsc file before it was permitted ({filename}).");
         }
     }
 
     public void Browse(string? body, string? options) {
+        Browse(body, null, options);
+    }
+
+    public void Browse(DreamResource body, string? options) {
+        Browse(null, body.ResourceData, options);
+    }
+
+    private void Browse(string? body, byte[]? bodyData, string? options) {
         string? window = null;
+        string? file = null;
+        bool display = true;
         Vector2i size = (480, 480);
 
         if (options != null) {
@@ -475,6 +547,10 @@ public sealed partial class DreamConnection {
 
                     if (key == "window") {
                         window = value;
+                    } else if (key == "file") {
+                        file = value;
+                    } else if (key == "display") {
+                        display = value != "0" && !value.Equals("false", StringComparison.OrdinalIgnoreCase);
                     } else if (key == "size") {
                         string[] sizeSeparated = value.Split("x", 2);
 
@@ -487,7 +563,10 @@ public sealed partial class DreamConnection {
         var msg = new MsgBrowse() {
             Size = size,
             Window = window,
-            HtmlSource = body
+            File = file,
+            Display = display,
+            HtmlSource = body,
+            BodyData = bodyData
         };
 
         Session?.Channel.SendMessage(msg);
@@ -495,7 +574,7 @@ public sealed partial class DreamConnection {
 
     public void WinSet(string? controlId, string @params) {
         var msg = new MsgWinSet() {
-            ControlId = controlId,
+            ControlId = controlId ?? string.Empty,
             Params = @params
         };
 

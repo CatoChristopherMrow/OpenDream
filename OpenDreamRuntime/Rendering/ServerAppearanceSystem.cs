@@ -7,6 +7,7 @@ using Robust.Shared.Player;
 using System.Diagnostics;
 using System.Threading;
 using OpenDreamRuntime.Objects.Types;
+using Robust.Shared.Serialization;
 using SharedAppearanceSystem = OpenDreamShared.Rendering.SharedAppearanceSystem;
 
 namespace OpenDreamRuntime.Rendering;
@@ -26,13 +27,18 @@ public sealed partial class ServerAppearanceSystem : SharedAppearanceSystem {
     /// </summary>
     private readonly Lock _lock = new();
 
+    private readonly Queue<uint> _appearanceRemovalQueue = new();
+    private readonly List<ImmutableAppearance> _appearanceSendQueue = new();
     private readonly Dictionary<uint, ProxyWeakRef> _idToAppearance = new();
     private uint _counter;
 
     [Dependency] private DreamManager _dreamManager = default!;
     [Dependency] private IPlayerManager _playerManager = default!;
+    [Dependency] private IRobustSerializer _serializer = default!;
 
     public override void Initialize() {
+        UpdatesOutsidePrediction = true;
+
         DefaultAppearance = new ImmutableAppearance(MutableAppearance.Default, this);
         DefaultAppearance.MarkRegistered(_counter++); //first appearance registered gets id 0, this is the blank default appearance
         ProxyWeakRef proxyWeakRef = new(DefaultAppearance);
@@ -50,6 +56,38 @@ public sealed partial class ServerAppearanceSystem : SharedAppearanceSystem {
             _appearanceLookup.Clear();
             _idToAppearance.Clear();
         }
+    }
+
+    public override void Update(float frameTime) {
+        lock (_lock) {
+            if (_appearanceSendQueue.Count > 0) {
+                using var compressed = MsgAllAppearances.CompressAppearances(_appearanceSendQueue, _appearanceSendQueue.Count, _serializer);
+
+                RaiseNetworkEvent(new NewAppearancesEvent(compressed.ToArray()));
+                _appearanceSendQueue.Clear();
+            }
+
+            if (_appearanceRemovalQueue.Count > 0) {
+                var removalEvent = new RemoveAppearancesEvent(_appearanceRemovalQueue.ToArray());
+                RaiseNetworkEvent(removalEvent);
+
+                while (_appearanceRemovalQueue.TryDequeue(out var appearanceId)) {
+                    var proxyWeakRef = _idToAppearance[appearanceId];
+
+                    proxyWeakRef.TryGetTarget(out var appearance);
+                    if (_appearanceLookup.TryGetValue(proxyWeakRef, out var weakRef)) {
+                        //it is possible that a new appearance was created with the same hash before the GC got around to cleaning up the old one
+                        if (weakRef.TryGetTarget(out var target) && !ReferenceEquals(target, appearance))
+                            continue;
+
+                        _appearanceLookup.Remove(proxyWeakRef);
+                        _idToAppearance.Remove(appearanceId);
+                    }
+                }
+            }
+        }
+
+        base.Update(frameTime);
     }
 
     private void OnPlayerStatusChanged(object? sender, SessionStatusEventArgs e) {
@@ -71,11 +109,11 @@ public sealed partial class ServerAppearanceSystem : SharedAppearanceSystem {
 
     private void RegisterAppearance(ImmutableAppearance immutableAppearance) {
         immutableAppearance.MarkRegistered(_counter++); //lets this appearance know it needs to do GC finaliser & get an ID
+
         ProxyWeakRef proxyWeakRef = new(immutableAppearance);
         _appearanceLookup.Add(proxyWeakRef);
         _idToAppearance.Add(immutableAppearance.MustGetId(), proxyWeakRef);
-
-        RaiseNetworkEvent(new NewAppearanceEvent(immutableAppearance));
+        _appearanceSendQueue.Add(immutableAppearance);
     }
 
     public ImmutableAppearance AddAppearance(MutableAppearance appearance, bool registerAppearance = true) {
@@ -86,14 +124,26 @@ public sealed partial class ServerAppearanceSystem : SharedAppearanceSystem {
 
     public ImmutableAppearance AddAppearance(ImmutableAppearance appearance, bool registerAppearance = true) {
         lock (_lock) {
-            if(_appearanceLookup.TryGetValue(new(appearance), out var weakReference) && weakReference.TryGetTarget(out var originalImmutable)) {
-                return originalImmutable;
-            } else if (registerAppearance) {
-                RegisterAppearance(appearance);
-                return appearance;
-            } else {
-                return appearance;
-            }
+            return AddAppearanceLocked(appearance, registerAppearance);
+        }
+    }
+
+    private ImmutableAppearance AddAppearanceLocked(ImmutableAppearance appearance, bool registerAppearance) {
+        for (var i = 0; i < appearance.Overlays.Length; i++) {
+            appearance.Overlays[i] = AddAppearanceLocked(appearance.Overlays[i], registerAppearance);
+        }
+
+        for (var i = 0; i < appearance.Underlays.Length; i++) {
+            appearance.Underlays[i] = AddAppearanceLocked(appearance.Underlays[i], registerAppearance);
+        }
+
+        if(_appearanceLookup.TryGetValue(new(appearance), out var weakReference) && weakReference.TryGetTarget(out var originalImmutable)) {
+            return originalImmutable;
+        } else if (registerAppearance) {
+            RegisterAppearance(appearance);
+            return appearance;
+        } else {
+            return appearance;
         }
     }
 
@@ -101,15 +151,7 @@ public sealed partial class ServerAppearanceSystem : SharedAppearanceSystem {
     [Access(typeof(ImmutableAppearance))]
     public override void RemoveAppearance(ImmutableAppearance appearance) {
         lock (_lock) {
-            ProxyWeakRef proxyWeakRef = new(appearance);
-            if(_appearanceLookup.TryGetValue(proxyWeakRef, out var weakRef)) {
-                //it is possible that a new appearance was created with the same hash before the GC got around to cleaning up the old one
-                if(weakRef.TryGetTarget(out var target) && !ReferenceEquals(target,appearance))
-                    return;
-                _appearanceLookup.Remove(proxyWeakRef);
-                _idToAppearance.Remove(appearance.MustGetId());
-                RaiseNetworkEvent(new RemoveAppearanceEvent(appearance.MustGetId()));
-            }
+            _appearanceRemovalQueue.Enqueue(appearance.MustGetId());
         }
     }
 
@@ -128,10 +170,14 @@ public sealed partial class ServerAppearanceSystem : SharedAppearanceSystem {
         }
     }
 
-    public void Animate(NetEntity entity, MutableAppearance targetAppearance, TimeSpan duration, AnimationEasing easing, int loop, AnimationFlags flags, int delay, bool chainAnim, uint? turfId) {
+    public void Animate(NetEntity entity, MutableAppearance targetAppearance, TimeSpan duration, AnimationEasing easing, int loop, AnimationFlags flags, int delay, bool chainAnim, uint? turfId, string? tag, string? command, string? atomRef) {
         uint appearanceId = AddAppearance(targetAppearance).MustGetId();
 
-        RaiseNetworkEvent(new AnimationEvent(entity, appearanceId, duration, easing, loop, flags, delay, chainAnim, turfId));
+        RaiseNetworkEvent(new AnimationEvent(entity, appearanceId, duration, easing, loop, flags, delay, chainAnim, turfId, tag, command, atomRef, stop: false));
+    }
+
+    public void StopAnimation(NetEntity entity, uint? turfId, string tag) {
+        RaiseNetworkEvent(new AnimationEvent(entity, 0, TimeSpan.Zero, default, 0, default, 0, false, turfId, tag, null, null, stop: true));
     }
 
     public void Flick(DreamObjectAtom atom, int iconId, string? iconState) {

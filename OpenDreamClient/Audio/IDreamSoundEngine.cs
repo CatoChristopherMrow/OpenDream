@@ -6,6 +6,7 @@ namespace OpenDreamClient.Audio;
 public interface IDreamSoundEngine {
     void Initialize();
     void PlaySound(SoundData soundData, MsgSound.FormatType format, ResourceSound sound);
+    void PlaySound(SoundData soundData, MsgSound.FormatType format, string resourcePath);
     void StopChannel(int channel);
     void StopAllChannels();
 

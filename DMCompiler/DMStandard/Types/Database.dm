@@ -1,5 +1,6 @@
 /database
 	parent_type = /datum
+	var/_binobj
 	proc/Close()
 	proc/Error()
 	proc/ErrorMsg()
@@ -7,7 +8,7 @@
 	proc/Open(filename)
 
 /database/query
-	var/_binobj as opendream_unimplemented
+	var/_binobj
 	proc/Add(text, ...)
 	proc/Clear()
 	Close()
@@ -22,4 +23,3 @@
 	proc/RowsAffected()
 
 	proc/Reset()
-		set opendream_unimplemented = TRUE

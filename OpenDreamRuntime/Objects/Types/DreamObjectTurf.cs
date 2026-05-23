@@ -44,8 +44,15 @@ public sealed class DreamObjectTurf : DreamObjectAtom {
         Initialize(new());
     }
 
+    protected override bool ShouldDelete() {
+        return false;
+    }
+
     public void OnAreaChange(DreamObjectArea oldArea) {
         if (Cell == null!)
+            return;
+
+        if (Appearance == null! || oldArea.Appearance == null!)
             return;
 
         using var newAppearance = Appearance.ToMutable();

@@ -13,7 +13,7 @@ using Robust.Shared.Input;
 namespace OpenDreamClient.Interface.Controls;
 
 public sealed partial class ControlMap(ControlDescriptor controlDescriptor, ControlWindow window) : InterfaceControl(controlDescriptor, window) {
-    public ScalingViewport Viewport { get; private set; }
+    public ScalingViewport Viewport { get; private set; } = default!;
 
     [Dependency] private IEntitySystemManager _entitySystemManager = default!;
     private MouseInputSystem? _mouseInput;
@@ -26,8 +26,10 @@ public sealed partial class ControlMap(ControlDescriptor controlDescriptor, Cont
     protected override void UpdateElementDescriptor() {
         base.UpdateElementDescriptor();
 
-        // Don't attempt to render any non-main viewports
-        Viewport.Visible = MapDescriptor.IsDefault.Value;
+        Viewport.MapControlId = MapDescriptor.IsDefault.Value ? null : Id.Value;
+        Viewport.MapControlClipOffset = MapDescriptor.OpenDreamClipOffset.Vector;
+        Viewport.MapControlFullSize = MapDescriptor.OpenDreamFullSize.Vector;
+        Viewport.Visible = MapDescriptor.IsVisible.Value;
 
         Viewport.StretchMode = MapDescriptor.ZoomMode.Value switch {
             "blur" => ScalingViewportStretchMode.Bilinear,
@@ -85,7 +87,8 @@ public sealed partial class ControlMap(ControlDescriptor controlDescriptor, Cont
 
     private void OnViewportKeyBindEvent(GUIBoundKeyEventArgs e) {
         if (e.Function == EngineKeyFunctions.Use || e.Function == EngineKeyFunctions.TextCursorSelect ||
-            e.Function == EngineKeyFunctions.UIRightClick || e.Function == OpenDreamKeyFunctions.MouseMiddle) {
+            e.Function == EngineKeyFunctions.UIRightClick || e.Function == OpenDreamKeyFunctions.MouseMiddle ||
+            e.Function == OpenDreamKeyFunctions.MouseButton4 || e.Function == OpenDreamKeyFunctions.MouseButton5) {
             _entitySystemManager.Resolve(ref _mouseInput);
 
             if (_mouseInput.HandleViewportEvent(Viewport, e, ControlDescriptor)) {

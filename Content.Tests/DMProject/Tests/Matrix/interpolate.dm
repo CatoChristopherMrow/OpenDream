@@ -1,0 +1,36 @@
+// NOBYOND
+/proc/AssertClose(A, B)
+	ASSERT(abs(A - B) < 0.0001)
+
+/proc/RunTest()
+	var/matrix/A = matrix(1, 2, 3, 4, 5, 6)
+	var/matrix/B = matrix(11, 22, 33, 44, 55, 66)
+	var/matrix/result = A.Interpolate(B, 0.5)
+
+	ASSERT(result == A)
+	AssertClose(A.a, 6)
+	AssertClose(A.b, 12)
+	AssertClose(A.c, 18)
+	AssertClose(A.d, 24)
+	AssertClose(A.e, 30)
+	AssertClose(A.f, 36)
+
+	var/matrix/C = matrix(0, 0, 0, 0, 0, 0)
+	var/matrix/D = matrix(10, 20, 30, 40, 50, 60)
+	var/matrix/E = matrix(C, D, 0.25, 8)
+
+	ASSERT(E != C)
+	AssertClose(E.a, 2.5)
+	AssertClose(E.b, 5)
+	AssertClose(E.c, 7.5)
+	AssertClose(E.d, 10)
+	AssertClose(E.e, 12.5)
+	AssertClose(E.f, 15)
+
+	var/matrix/F = matrix(matrix(), matrix(90, MATRIX_ROTATE), 0.5, 8)
+	AssertClose(F.a, 0.707107)
+	AssertClose(F.b, 0.707107)
+	AssertClose(F.c, 0)
+	AssertClose(F.d, -0.707107)
+	AssertClose(F.e, 0.707107)
+	AssertClose(F.f, 0)

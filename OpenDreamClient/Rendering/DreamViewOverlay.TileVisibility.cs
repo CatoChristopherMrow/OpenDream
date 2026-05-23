@@ -27,9 +27,13 @@ internal partial class DreamViewOverlay {
         if (!_tileInfoDirty)
             return _tileInfo;
 
+        var oldTileInfo = _tileInfo;
+        var newTileInfo = new ViewAlgorithm.Tile[viewRange.Width + 2, viewRange.Height + 2];
+        var populatedTiles = 0;
+
         var eyeWorldPos = _mapSystem.GridTileToWorld(gridUid, grid, eyeTile.GridIndices);
         var tileRefs = _mapSystem.GetTilesEnumerator(gridUid, grid,
-            Box2.CenteredAround(eyeWorldPos.Position, new Vector2(_tileInfo.GetLength(0), _tileInfo.GetLength(1))));
+            Box2.CenteredAround(eyeWorldPos.Position, new Vector2(newTileInfo.GetLength(0), newTileInfo.GetLength(1))));
 
         // Gather up all the data the view algorithm needs
         while (tileRefs.MoveNext(out var tileRef)) {
@@ -38,9 +42,9 @@ internal partial class DreamViewOverlay {
             if (appearance == null)
                 continue;
 
-            int xIndex = delta.X + viewRange.CenterX;
-            int yIndex = delta.Y + viewRange.CenterY;
-            if (xIndex < 0 || yIndex < 0 || xIndex >= _tileInfo.GetLength(0) || yIndex >= _tileInfo.GetLength(1))
+            int xIndex = delta.X + viewRange.CenterX + 1;
+            int yIndex = delta.Y + viewRange.CenterY + 1;
+            if (xIndex < 0 || yIndex < 0 || xIndex >= newTileInfo.GetLength(0) || yIndex >= newTileInfo.GetLength(1))
                 continue;
 
             var tile = new ViewAlgorithm.Tile {
@@ -50,8 +54,13 @@ internal partial class DreamViewOverlay {
                 DeltaY = delta.Y
             };
 
-            _tileInfo[xIndex, yIndex] = tile;
+            newTileInfo[xIndex, yIndex] = tile;
+            populatedTiles++;
         }
+
+        var centerTile = newTileInfo[viewRange.CenterX + 1, viewRange.CenterY + 1];
+        if ((populatedTiles == 0 || centerTile == null) && oldTileInfo != null)
+            return oldTileInfo;
 
         // Apply entities' opacity
         foreach (EntityUid entity in EntitiesInView) {
@@ -65,18 +74,19 @@ internal partial class DreamViewOverlay {
             if (sprite.Icon.Appearance == null) //appearance hasn't loaded yet
                 continue;
 
-            var worldPos = _transformSystem.GetWorldPosition(transform);
-            var tilePos = _mapSystem.WorldToTile(gridUid, grid, worldPos) - eyeTile.GridIndices + viewRange.Center;
-            if (tilePos.X < 0 || tilePos.Y < 0 || tilePos.X >= _tileInfo.GetLength(0) ||
-                tilePos.Y >= _tileInfo.GetLength(1))
+            var worldPos = GetLogicalWorldPosition(entity, transform);
+            var tilePos = _mapSystem.WorldToTile(gridUid, grid, worldPos) - eyeTile.GridIndices + viewRange.Center + 1;
+            if (tilePos.X < 0 || tilePos.Y < 0 || tilePos.X >= newTileInfo.GetLength(0) ||
+                tilePos.Y >= newTileInfo.GetLength(1))
                 continue;
 
-            var tile = _tileInfo[tilePos.X, tilePos.Y];
+            var tile = newTileInfo[tilePos.X, tilePos.Y];
             if (tile != null)
                 tile.Opaque |= sprite.Icon.Appearance.Opacity;
         }
 
-        ViewAlgorithm.CalculateVisibility(_tileInfo);
+        ViewAlgorithm.CalculateVisibility(newTileInfo);
+        _tileInfo = newTileInfo;
         _tileInfoDirty = false;
         return _tileInfo;
     }

@@ -14,13 +14,14 @@ using OpenDreamShared.Dream;
 using Robust.Server;
 using Robust.Server.Player;
 using Robust.Shared.Asynchronous;
+using Robust.Shared.Random;
 using Robust.Shared.Timing;
 using System.Diagnostics.CodeAnalysis;
 
 namespace OpenDreamRuntime;
 
 public sealed partial class DreamManager {
-    public DreamObjectWorld WorldInstance { get; set; }
+    public DreamObjectWorld WorldInstance { get; set; } = default!;
     public Exception? LastDMException { get; set; }
 
     public event EventHandler<Exception>? OnException;
@@ -28,10 +29,13 @@ public sealed partial class DreamManager {
     // Global state that may not really (really really) belong here
     public DreamValue[] Globals { get; set; } = Array.Empty<DreamValue>();
     public List<string> GlobalNames { get; private set; } = new();
+    private int?[] _globalInitProcs = Array.Empty<int?>();
+    private bool[] _globalInitialized = Array.Empty<bool>();
+    private bool[] _globalInitializing = Array.Empty<bool>();
     public HashSet<DreamObject> Clients { get; } = new();
 
-    public Random Random { get; set; } = new();
-    public DreamProc ImageConstructor, ImageFactoryProc;
+    public IRobustRandom Random { get; } = new RobustRandom();
+    public DreamProc ImageConstructor = default!, ImageFactoryProc = default!;
     public int ListPoolThreshold, ListPoolSize;
     public Dictionary<WarningCode, ErrorLevel> OptionalErrors { get; private set; } = new();
     public bool Initialized { get; private set; }
@@ -69,6 +73,7 @@ public sealed partial class DreamManager {
 
         if (!LoadJson(jsonPath)) {
             _taskManager.RunOnMainThread(() => { IoCManager.Resolve<IBaseServer>().Shutdown("Error while loading the compiled json. The opendream.json_path CVar may be empty, or points to a file that doesn't exist"); });
+            return;
         }
     }
 
@@ -102,7 +107,7 @@ public sealed partial class DreamManager {
     }
 
     public void Update() {
-        if (!Initialized)
+        if (!Initialized || WorldInstance.Deleted)
             return;
 
         using (Profiler.BeginZone("Tick", color: (uint)Color.OrangeRed.ToArgb())) {
@@ -110,6 +115,9 @@ public sealed partial class DreamManager {
 
             using (Profiler.BeginZone("DM Execution", color: (uint)Color.LightPink.ToArgb()))
                 _procScheduler.Process();
+
+            if (!Initialized || WorldInstance.Deleted)
+                return;
 
             using (Profiler.BeginZone("Map Update", color: (uint)Color.LightPink.ToArgb())) {
                 UpdateStat();
@@ -166,12 +174,22 @@ public sealed partial class DreamManager {
         if (json.Globals is { } jsonGlobals) {
             Globals = new DreamValue[jsonGlobals.GlobalCount];
             GlobalNames = jsonGlobals.Names;
+            _globalInitProcs = new int?[jsonGlobals.GlobalCount];
+            _globalInitialized = new bool[jsonGlobals.GlobalCount];
+            _globalInitializing = new bool[jsonGlobals.GlobalCount];
+
+            if (jsonGlobals.InitProcs != null) {
+                foreach (var (globalId, procId) in jsonGlobals.InitProcs) {
+                    _globalInitProcs[globalId] = procId;
+                }
+            }
 
             for (int i = 0; i < jsonGlobals.GlobalCount; i++) {
-                var globalJson = jsonGlobals.Globals.GetValueOrDefault(i, null);
+                var globalJson = ((IReadOnlyDictionary<int, object?>) jsonGlobals.Globals).GetValueOrDefault(i, null);
                 using var globalValue = _objectTree.GetDreamValueFromJsonElement(globalJson);
 
                 SetGlobal(i, globalValue);
+                _globalInitialized[i] = _globalInitProcs[i] == null;
             }
         }
 
@@ -231,6 +249,10 @@ public sealed partial class DreamManager {
         LastDMException = e;
         OnException?.Invoke(this, e);
 
+        if (WorldInstance.Deleted) {
+            return;
+        }
+
         // Invoke world.Error()
         var obj = _objectTree.CreateObject<DreamObjectException>(_objectTree.Exception);
         if (e is DMThrowException throwException)
@@ -261,5 +283,28 @@ public sealed partial class DreamManager {
         value.IncRef();
         Globals[id].Dispose();
         Globals[id] = value;
+
+        if ((uint)id < (uint)_globalInitialized.Length)
+            _globalInitialized[id] = true;
+    }
+
+    public DreamValue GetGlobal(int id) {
+        if ((uint)id < (uint)_globalInitProcs.Length &&
+            !_globalInitialized[id] &&
+            !_globalInitializing[id] &&
+            _globalInitProcs[id] is { } initProcId) {
+            _globalInitializing[id] = true;
+
+            try {
+                using var _ = DreamThread.Run(_objectTree.Procs[initProcId], WorldInstance, null);
+                _globalInitialized[id] = true;
+            } finally {
+                _globalInitializing[id] = false;
+            }
+        }
+
+        var global = Globals[id];
+        global.IncRef();
+        return global;
     }
 }

@@ -147,10 +147,11 @@ internal sealed class ArgumentList(Location location, (string? Name, DMExpressio
     }
 }
 
-internal readonly struct ExpressionContext(DMCompiler compiler, DMObject type, DMProc proc) {
+internal readonly struct ExpressionContext(DMCompiler compiler, DMObject type, DMProc? proc) {
     public readonly DMCompiler Compiler = compiler;
     public readonly DMObject Type = type;
-    public readonly DMProc Proc = proc;
+    public readonly DMProc? ProcOrNull = proc;
+    public DMProc Proc => ProcOrNull ?? throw new InvalidOperationException("Expression cannot emit proc bytecode without a proc context");
 
     public DMObjectTree ObjectTree => Compiler.DMObjectTree;
 }

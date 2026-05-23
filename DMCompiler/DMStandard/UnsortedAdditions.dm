@@ -1,5 +1,5 @@
 ﻿/proc/bounds(Ref=src, Dist=0)
-	set opendream_unimplemented = TRUE
+	return range(Dist, Ref)
 
 // An undocumented proc
 // Doesn't evaluate DM as you might expect, but instead DMScript
@@ -7,39 +7,51 @@
 	set opendream_unsupported = "eval() is officialy deprecated"
 
 /proc/load_resource(File)
-	set opendream_unimplemented = TRUE
 proc/missile(Type, Start, End)
-	set opendream_unimplemented = TRUE
-/proc/obounds(Ref=src, Dist=0)
-	set opendream_unimplemented = TRUE
-/proc/run(File)
-	set opendream_unimplemented = TRUE
-/proc/shell(command)
-	set opendream_unimplemented = TRUE
-/proc/bound_pixloc(var/atom/Atom, var/Dir as num) as /pixloc
-	set opendream_unimplemented = TRUE
 
-/proc/_dm_db_new_con()
-	set opendream_unimplemented = TRUE
-/proc/_dm_db_connect()
-	set opendream_unimplemented = TRUE
-/proc/_dm_db_close()
-	set opendream_unimplemented = TRUE
-/proc/_dm_db_is_connected()
-	set opendream_unimplemented = TRUE
-/proc/_dm_db_quote()
-	set opendream_unimplemented = TRUE
-/proc/_dm_db_new_query()
-	set opendream_unimplemented = TRUE
-/proc/_dm_db_execute()
-	set opendream_unimplemented = TRUE
-/proc/_dm_db_next_row()
-	set opendream_unimplemented = TRUE
-/proc/_dm_db_rows_affected()
-	set opendream_unimplemented = TRUE
-/proc/_dm_db_row_count()
-	set opendream_unimplemented = TRUE
-/proc/_dm_db_error_msg()
-	set opendream_unimplemented = TRUE
-/proc/_dm_db_columns()
-	set opendream_unimplemented = TRUE
+/proc/obounds(Ref=src, Dist=0)
+	return orange(Dist, Ref)
+/proc/run(File)
+/proc/shell(command)
+/proc/bound_pixloc(var/atom/Atom, var/Dir as num)
+	if (!istype(Atom))
+		return null
+	if (Atom.z <= 0)
+		return null
+
+	var/left = ((Atom.x - 1) * world.icon_size) + (Atom.step_x || 0) + Atom:bound_x + 1
+	var/right = left + Atom:bound_width
+	var/bottom = ((Atom.y - 1) * world.icon_size) + (Atom.step_y || 0) + Atom:bound_y + 1
+	var/top = bottom + Atom:bound_height
+
+	var/pixel_x
+	if (Dir & EAST)
+		pixel_x = right
+	else if (Dir & WEST)
+		pixel_x = left
+	else
+		pixel_x = (left + right) / 2
+
+	var/pixel_y
+	if (Dir & NORTH)
+		pixel_y = top
+	else if (Dir & SOUTH)
+		pixel_y = bottom
+	else
+		pixel_y = (bottom + top) / 2
+
+	var/pixloc/result = pixloc(pixel_x, pixel_y, Atom.z)
+	return result
+
+/proc/_dm_db_new_con(filename)
+/proc/_dm_db_connect(database, filename)
+/proc/_dm_db_close(database)
+/proc/_dm_db_is_connected(database)
+/proc/_dm_db_quote(value, flags)
+/proc/_dm_db_new_query(text, ...)
+/proc/_dm_db_execute(query, database, a, b, c)
+/proc/_dm_db_next_row(query, a, b)
+/proc/_dm_db_rows_affected(query)
+/proc/_dm_db_row_count(query)
+/proc/_dm_db_error_msg(database_or_query)
+/proc/_dm_db_columns(query, column)

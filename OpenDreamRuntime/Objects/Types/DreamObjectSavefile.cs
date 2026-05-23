@@ -39,7 +39,7 @@ public sealed class DreamObjectSavefile : DreamObject {
                 return;
 
             CurrentDir = tempDir;
-            _eof = false;
+            _eof = tempDir is SfDreamDir;
             if (value.StartsWith('/')) //absolute path
                 _currentPath = value;
             else //relative path
@@ -53,7 +53,6 @@ public sealed class DreamObjectSavefile : DreamObject {
     private static readonly HashSet<DreamObjectSavefile> SavefilesToFlush = new();
 
     private static ISawmill? _sawmill;
-
     /// <summary>
     /// Temporary savefiles should be deleted when the DreamObjectSavefile is deleted. Temporary savefiles can be created by creating a new savefile datum with a null filename or an entry in the world's resource cache
     /// </summary>
@@ -262,6 +261,13 @@ public sealed class DreamObjectSavefile : DreamObject {
     public void Flush() {
         Resource!.Clear();
         Resource!.Output(new DreamValue(JsonSerializer.Serialize(_rootNode)));
+    }
+
+    public bool Lock() {
+        return Resource?.ResourcePath != null;
+    }
+
+    public void Unlock() {
     }
 
     /// <summary>

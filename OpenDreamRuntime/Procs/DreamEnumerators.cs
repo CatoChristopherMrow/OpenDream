@@ -12,6 +12,8 @@ public interface IDreamValueEnumerator : IDisposable {
     /// <param name="assocReference">The var to assign an associated value to, for use by key-value pair loops</param>
     /// <returns>Whether the enumeration succeeded or not</returns>
     public bool Enumerate(DMProcState state, DreamReference reference, DreamReference assocReference);
+
+    public int CountReferences(DreamObject dreamObject);
 }
 
 /// <summary>
@@ -34,6 +36,10 @@ internal sealed class DreamValueRangeEnumerator(float rangeStart, float rangeEnd
     }
 
     public void Dispose() { }
+
+    public int CountReferences(DreamObject dreamObject) {
+        return 0;
+    }
 }
 
 /// <summary>
@@ -63,6 +69,10 @@ internal sealed class DreamObjectEnumerator(IEnumerable<DreamObject> dreamObject
     public void Dispose() {
         _dreamObjectEnumerator.Dispose();
     }
+
+    public int CountReferences(DreamObject dreamObject) {
+        return 0;
+    }
 }
 
 /// <summary>
@@ -82,15 +92,38 @@ internal sealed class DreamValueArrayEnumerator(DreamValue[] values, Dictionary<
         state.AssignReference(reference, value);
         if (assocReference != DreamReference.NoRef)
             state.AssignReference(assocReference, assocValues?.GetValueOrDefault(value, DreamValue.Null) ?? DreamValue.Null);
+        if (success)
+            value.Dispose();
+
         return success;
     }
 
     public void Dispose() {
-        foreach (var value in values)
-            value.Dispose();
+        for (var i = _current + 1; i < values.Length; i++) {
+            values[i].Dispose();
+        }
+
         if (assocValues != null)
             foreach (var assocValue in assocValues.Values)
                 assocValue.Dispose();
+    }
+
+    public int CountReferences(DreamObject dreamObject) {
+        var count = 0;
+
+        for (var i = _current + 1; i < values.Length; i++) {
+            if (values[i].TryGetValueAsDreamObject(out var valueObject) && ReferenceEquals(valueObject, dreamObject))
+                count++;
+        }
+
+        if (assocValues != null) {
+            foreach (var assocValue in assocValues.Values) {
+                if (assocValue.TryGetValueAsDreamObject(out var valueObject) && ReferenceEquals(valueObject, dreamObject))
+                    count++;
+            }
+        }
+
+        return count;
     }
 }
 
@@ -125,9 +158,31 @@ internal sealed class FilteredDreamValueArrayEnumerator(DreamValue[] values, Dic
     }
 
     public void Dispose() {
+        for (var i = _current + 1; i < values.Length; i++) {
+            values[i].Dispose();
+        }
+
         if (assocValues != null)
             foreach (var assocValue in assocValues.Values)
                 assocValue.Dispose();
+    }
+
+    public int CountReferences(DreamObject dreamObject) {
+        var count = 0;
+
+        for (var i = _current + 1; i < values.Length; i++) {
+            if (values[i].TryGetValueAsDreamObject(out var valueObject) && ReferenceEquals(valueObject, dreamObject))
+                count++;
+        }
+
+        if (assocValues != null) {
+            foreach (var assocValue in assocValues.Values) {
+                if (assocValue.TryGetValueAsDreamObject(out var valueObject) && ReferenceEquals(valueObject, dreamObject))
+                    count++;
+            }
+        }
+
+        return count;
     }
 }
 
@@ -149,5 +204,9 @@ internal sealed class WorldContentsEnumerator(AtomManager atomManager, TreeEntry
 
     public void Dispose() {
         _enumerator.Dispose();
+    }
+
+    public int CountReferences(DreamObject dreamObject) {
+        return 0;
     }
 }

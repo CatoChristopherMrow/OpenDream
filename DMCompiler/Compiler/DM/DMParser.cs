@@ -41,6 +41,7 @@ namespace DMCompiler.Compiler.DM {
         public static readonly TokenType[] LtGtComparisonTypes = [
             TokenType.DM_LessThan,
             TokenType.DM_LessThanEquals,
+            TokenType.DM_LessThanEqualsGreaterThan,
             TokenType.DM_GreaterThan,
             TokenType.DM_GreaterThanEquals
         ];
@@ -118,6 +119,7 @@ namespace DMCompiler.Compiler.DM {
             TokenType.DM_LeftShiftEquals,
             TokenType.DM_LessThan,
             TokenType.DM_LessThanEquals,
+            TokenType.DM_LessThanEqualsGreaterThan,
             TokenType.DM_Minus,
             TokenType.DM_MinusEquals,
             TokenType.DM_MinusMinus,
@@ -152,6 +154,7 @@ namespace DMCompiler.Compiler.DM {
             TokenType.DM_Bar,
             TokenType.DM_DoubleSquareBracket,
             TokenType.DM_DoubleSquareBracketEquals,
+            TokenType.DM_ConstantString,
         ];
 
         public DMASTFile File() {
@@ -264,6 +267,8 @@ namespace DMCompiler.Compiler.DM {
                     Compiler.Emit(WarningCode.EmptyProc, loc,
                         "Empty proc detected - add an explicit \"return\" statement");
                 }
+
+                procBlock ??= new DMASTProcBlockInner(loc);
 
                 if (path.IsOperator) {
                     List<DMASTProcStatement> procStatements = procBlock.Statements.ToList();
@@ -1911,6 +1916,7 @@ namespace DMCompiler.Compiler.DM {
                 Whitespace();
 
                 DMASTExpression? c = ExpressionTernary(isTernaryB);
+                RequireExpression(ref c);
                 if (c is DMASTVoid) c = new DMASTConstantNull(c.Location);
 
                 return new DMASTTernary(a.Location, a, b, c);
@@ -2067,6 +2073,7 @@ namespace DMCompiler.Compiler.DM {
                     switch (token.Type) {
                         case TokenType.DM_LessThan: a = new DMASTLessThan(token.Location, a, b); break;
                         case TokenType.DM_LessThanEquals: a = new DMASTLessThanOrEqual(token.Location, a, b); break;
+                        case TokenType.DM_LessThanEqualsGreaterThan: a = new DMASTCompare(token.Location, a, b); break;
                         case TokenType.DM_GreaterThan: a = new DMASTGreaterThan(token.Location, a, b); break;
                         case TokenType.DM_GreaterThanEquals: a = new DMASTGreaterThanOrEqual(token.Location, a, b); break;
                     }
@@ -2254,8 +2261,10 @@ namespace DMCompiler.Compiler.DM {
                 return inner;
             }
 
-            if (token.Type == TokenType.DM_Var && _allowVarDeclExpression)
-                return new DMASTVarDeclExpression( loc, Path() );
+            if (token.Type == TokenType.DM_Var && _allowVarDeclExpression) {
+                var varPath = Path();
+                return varPath != null ? new DMASTVarDeclExpression(loc, varPath) : new DMASTInvalidExpression(loc);
+            }
 
             if (Constant() is { } constant)
                 return constant;

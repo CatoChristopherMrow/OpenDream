@@ -167,6 +167,9 @@ internal class DMPreprocessorParser(DMCompiler compiler) {
                 case TokenType.DM_LessThanEquals:
                     a = (a <= b ? 1.0f : 0.0f);
                     break;
+                case TokenType.DM_LessThanEqualsGreaterThan:
+                    a = Math.Sign(a.Value - b.Value);
+                    break;
                 case TokenType.DM_GreaterThan:
                     a = (a > b ? 1.0f : 0.0f);
                     break;

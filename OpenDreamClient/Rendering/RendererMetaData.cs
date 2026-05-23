@@ -7,12 +7,16 @@ namespace OpenDreamClient.Rendering;
 internal sealed class RendererMetaData : IComparable<RendererMetaData> {
     public DreamIcon? MainIcon;
     public Vector2 Position;
+    public Vector2 SortPosition;
+    public MapFormat MapFormat;
     public int Plane; //true plane value may be different from appearance plane value, due to special flags
     public float Layer; //ditto for layer
+    public float AppearanceLayer;
     public EntityUid Uid;
     public EntityUid ClickUid; //the UID of the object clicks on this should be passed to (ie, for overlays)
     public bool IsScreen;
     public int TieBreaker; //Used for biasing render order (ie, for overlays)
+    public int SortIndex; //Preserves BYOND-visible insertion order when all other ordering matches
     public Color ColorToApply;
     public ColorMatrix ColorMatrixToApply;
     public float AlphaToApply;
@@ -40,12 +44,16 @@ internal sealed class RendererMetaData : IComparable<RendererMetaData> {
     public void Reset() {
         MainIcon = null;
         Position = Vector2.Zero;
+        SortPosition = Vector2.Zero;
+        MapFormat = MapFormat.TopDown;
         Plane = 0;
         Layer = 0;
+        AppearanceLayer = 0;
         Uid = EntityUid.Invalid;
         ClickUid = EntityUid.Invalid;
         IsScreen = false;
         TieBreaker = 0;
+        SortIndex = 0;
         ColorToApply = Color.White;
         ColorMatrixToApply = ColorMatrix.Identity;
         AlphaToApply = 1.0f;
@@ -96,7 +104,7 @@ internal sealed class RendererMetaData : IComparable<RendererMetaData> {
         }
 
         //Plane master objects go first for any given plane
-        val = IsPlaneMaster.CompareTo(IsPlaneMaster);
+        val = IsPlaneMaster.CompareTo(other.IsPlaneMaster);
         if (val != 0) {
             return -val; //sign flip because we want 1 < -1
         }
@@ -107,11 +115,28 @@ internal sealed class RendererMetaData : IComparable<RendererMetaData> {
             return val;
         }
 
-        //depending on world.map_format, either layer or physical position
-        //TODO
-        val = Layer.CompareTo(other.Layer);
-        if (val != 0) {
-            return val;
+        if (MapFormat == MapFormat.TopDown || IsScreen) {
+            val = Layer.CompareTo(other.Layer);
+            if (val != 0) {
+                return val;
+            }
+        } else {
+            // Non-topdown maps sort by physical position before layer. Higher/northern
+            // positions are drawn first; lower/southern positions are drawn later/in front.
+            val = other.SortPosition.Y.CompareTo(SortPosition.Y);
+            if (val != 0) {
+                return val;
+            }
+
+            val = SortPosition.X.CompareTo(other.SortPosition.X);
+            if (val != 0) {
+                return val;
+            }
+
+            val = Layer.CompareTo(other.Layer);
+            if (val != 0) {
+                return val;
+            }
         }
 
         //Finally, tie-breaker - in BYOND, this is order of creation of the sprites
@@ -123,20 +148,18 @@ internal sealed class RendererMetaData : IComparable<RendererMetaData> {
 
         //FLOAT_LAYER must be sorted local to the thing they're floating on, and since all overlays/underlays share their parent's UID, we
         //can do that here.
-        if (MainIcon?.Appearance?.Layer < -1 && other.MainIcon?.Appearance?.Layer < -1) { //if these are FLOAT_LAYER, sort amongst them
-            val = MainIcon.Appearance.Layer.CompareTo(other.MainIcon.Appearance.Layer);
+        if (AppearanceLayer < -1 && other.AppearanceLayer < -1) { //if these are FLOAT_LAYER, sort amongst them
+            val = AppearanceLayer.CompareTo(other.AppearanceLayer);
             if (val != 0) {
                 return val;
             }
         }
 
-        // All else being the same, group them by icon.
-        // This allows Clyde to batch the draw calls more efficiently.
-        val = (MainIcon?.Appearance?.Icon ?? 0) - (other.MainIcon?.Appearance?.Icon ?? 0);
+        val = TieBreaker.CompareTo(other.TieBreaker);
         if (val != 0) {
             return val;
         }
 
-        return TieBreaker.CompareTo(other.TieBreaker);
+        return SortIndex.CompareTo(other.SortIndex);
     }
 }

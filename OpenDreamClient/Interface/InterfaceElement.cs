@@ -59,13 +59,46 @@ public partial class InterfaceElement {
         MappingDataNode original =
                 (MappingDataNode)_serializationManager.WriteValue(ElementDescriptor.GetType(), ElementDescriptor, alwaysWrite: true); //alwayswrite because we want to access all properties, even defaults
         if (original.TryGet(property, out var node) && _serializationManager.TryGetVariableType(ElementDescriptor.GetType(), property, out var propertyDef)) {
-            value = (IDMFProperty?) _serializationManager.Read(propertyDef, node);
-            if(value is not null)
+            var propertyValue = _serializationManager.Read(propertyDef, node);
+
+            if (propertyValue is IDMFProperty dmfProperty) {
+                value = dmfProperty;
                 return true;
+            }
+
+            if (propertyValue is string stringProperty) {
+                value = new DMFPropertyString(stringProperty);
+                return true;
+            }
         }
 
         value = null;
         return false;
+    }
+
+    public virtual IEnumerable<(string Name, IDMFProperty Value)> EnumerateProperties() {
+        MappingDataNode original =
+            (MappingDataNode)_serializationManager.WriteValue(ElementDescriptor.GetType(), ElementDescriptor, alwaysWrite: true);
+
+        foreach (var property in original.Keys) {
+            if (!original.TryGet(property, out var node) ||
+                !_serializationManager.TryGetVariableType(ElementDescriptor.GetType(), property, out var propertyDef)) {
+                continue;
+            }
+
+            object? propertyValue;
+            try {
+                propertyValue = _serializationManager.Read(propertyDef, node);
+            } catch (Exception) {
+                continue;
+            }
+
+            if (propertyValue is IDMFProperty dmfProperty) {
+                yield return (property, dmfProperty);
+            } else if (propertyValue is string stringProperty) {
+                yield return (property, new DMFPropertyString(stringProperty));
+            }
+        }
     }
 
     // TODO: Replace PopulateElementDescriptor with this

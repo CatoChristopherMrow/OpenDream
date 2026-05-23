@@ -54,10 +54,12 @@ namespace OpenDreamRuntime.Procs {
             int size = state.ReadInt();
             var list = state.Proc.ObjectTree.CreateList(size);
 
-            foreach (DreamValue value in state.PopCount(size)) {
+            var popped = state.PopCount(size);
+            foreach (DreamValue value in popped) {
                 list.AddValue(value);
                 value.Dispose();
             }
+            state.ReleasePoppedStackValues(size);
 
             state.Push(new DreamValue(list));
             list.DecRef();
@@ -74,6 +76,7 @@ namespace OpenDreamRuntime.Procs {
                 list.Initialize(listInitArgs);
             foreach (var value in dimensionSizes)
                 value.Dispose();
+            state.ReleasePoppedStackValues(dimensionCount);
 
             state.Push(new DreamValue(list));
             list.DecRef();
@@ -95,6 +98,7 @@ namespace OpenDreamRuntime.Procs {
                     list.SetValue(key, value, allowGrowth: true);
                 }
             }
+            state.ReleasePoppedStackValues(size * 2);
 
             state.Push(new DreamValue(list));
             list.DecRef();
@@ -112,6 +116,7 @@ namespace OpenDreamRuntime.Procs {
 
                 list.SetValue(key, value, allowGrowth: true);
             }
+            state.ReleasePoppedStackValues(size * 2);
 
             state.Push(new DreamValue(list));
             list.DecRef();
@@ -229,7 +234,12 @@ namespace OpenDreamRuntime.Procs {
                 overrides = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonDict);
             }
 
-            if (!val.TryGetValueAsType(out var objectType)) {
+            TreeEntry? objectType;
+            if (val.TryGetValueAsModifiedType(out var modifiedType)) {
+                overrides ??= JsonSerializer.Deserialize<Dictionary<string, object?>>(modifiedType.VariableOverridesJson);
+
+                objectType = modifiedType.Type;
+            } else if (!val.TryGetValueAsType(out objectType)) {
                 if (val.TryGetValueAsString(out var pathString)) {
                     if (!state.Proc.ObjectTree.TryGetTreeEntry(pathString, out objectType)) {
                         ThrowCannotCreateUnknownObject(val);
@@ -243,9 +253,10 @@ namespace OpenDreamRuntime.Procs {
 
                     if (destination.TryGetValueAsDreamObject<DreamObjectAtom>(out var atom)) {
                         state.Proc.AtomManager.UpdateAppearance(atom, appearance => {
-                            state.Proc.VerbSystem.RegisterVerb(proc);
+                            state.Proc.VerbSystem?.RegisterVerb(proc);
 
-                            appearance.Verbs.Add(proc.VerbId!.Value);
+                            if (proc.VerbId is { } verbId)
+                                appearance.Verbs.Add(verbId);
                         });
                     } else if (destination.TryGetValueAsDreamObject<DreamObjectClient>(out var client)) {
                         client.ClientVerbs.AddValue(val);
@@ -257,6 +268,12 @@ namespace OpenDreamRuntime.Procs {
                 }
             }
 
+            if (objectType == null)
+                ThrowCannotCreateUnknownObject(val);
+
+            if (objectType == null)
+                return ProcStatus.Continue;
+
             var objectDef = objectType.ObjectDefinition;
             var newProc = objectDef.GetProc("New");
             var newArguments = state.PopProcArguments(newProc, argumentInfo);
@@ -265,8 +282,10 @@ namespace OpenDreamRuntime.Procs {
                 // Turfs are special. They're never created outside of map initialization
                 // So instead this will replace an existing turf's type and return that same turf
                 DreamValue loc = newArguments.GetArgument(0);
-                if (!loc.TryGetValueAsDreamObject<DreamObjectTurf>(out var turf))
+                if (!loc.TryGetValueAsDreamObject<DreamObjectTurf>(out var turf)) {
                     ThrowInvalidTurfLoc(loc);
+                    return ProcStatus.Continue;
+                }
 
                 state.Proc.DreamMapManager.SetTurf(turf, objectDef, newArguments);
                 if (overrides is not null) {
@@ -455,7 +474,7 @@ namespace OpenDreamRuntime.Procs {
                     //Interp values
                     case FormatSuffix.StringifyWithArticle:{
                         // TODO: use postPrefix for \th interpolation
-                        formattedString.Append(interps[nextInterpIndex].Stringify());
+                        formattedString.Append(StringifyForInterpolation(interps[nextInterpIndex], state));
                         prevInterpIndex = nextInterpIndex;
                         nextInterpIndex++;
                         continue;
@@ -470,7 +489,12 @@ namespace OpenDreamRuntime.Procs {
                     }
                     case FormatSuffix.StringifyNoArticle: {
                         if (interps[nextInterpIndex].TryGetValueAsDreamObject<DreamObject>(out var dreamObject)) {
-                            formattedString.Append(dreamObject.GetNameUnformatted());
+                            if (dreamObject.TryOperatorStringify(state, out var operatorResult)) {
+                                formattedString.Append(operatorResult.Stringify());
+                                operatorResult.Dispose();
+                            } else {
+                                formattedString.Append(dreamObject.GetNameUnformatted());
+                            }
                         } else if (interps[nextInterpIndex].TryGetValueAsString(out var interpStr)) {
                             formattedString.Append(StringFormatDecoder.RemoveFormatting(interpStr));
                         }
@@ -615,7 +639,7 @@ namespace OpenDreamRuntime.Procs {
                                 formattedString.Remove(lastIdx, interpString.Length);
                                 formattedString.Append("0th");
                             }
-                        } else if (interp.TryGetValueAsDreamObject(out var interpObj)) {
+                        } else if (interp.TryGetValueAsDreamObject(out var interpObj) && interpObj != null) {
                             var typeStr = interpObj.ObjectDefinition.Type;
                             var lastIdx = formattedString.ToString().LastIndexOf(typeStr);
                             if (lastIdx != -1) { // Can this even fail?
@@ -667,9 +691,22 @@ namespace OpenDreamRuntime.Procs {
 
             foreach (var interp in interps)
                 interp.Dispose();
+            state.ReleasePoppedStackValues(interpCount);
 
             state.Push(new DreamValue(formattedString.ToString()));
             return ProcStatus.Continue;
+        }
+
+        private static string StringifyForInterpolation(DreamValue value, DMProcState state) {
+            if (!value.TryGetValueAsDreamObject<DreamObject>(out var dreamObject))
+                return value.Stringify();
+
+            if (!dreamObject.TryOperatorStringify(state, out var operatorResult))
+                return value.Stringify();
+
+            string result = operatorResult.Stringify();
+            operatorResult.Dispose();
+            return result;
         }
 
         public static ProcStatus Initial(DMProcState state) {
@@ -719,7 +756,7 @@ namespace OpenDreamRuntime.Procs {
                         ? DreamValue.Null
                         : new DreamValue(objectDefinition.Parent.TreeEntry),
                 "type" => new DreamValue(objectDefinition.TreeEntry),
-                _ => objectDefinition.Variables.TryGetValue(property, out var val) ? val : DreamValue.Null
+                _ => objectDefinition.TryGetVariable(property, out var val) ? val : DreamValue.Null
             };
 
             state.Push(result);
@@ -738,7 +775,7 @@ namespace OpenDreamRuntime.Procs {
             using var value = state.Pop();
 
             if (listValue.TryGetValueAsDreamObject(out var listObject) && listObject != null) {
-                IDreamList list;
+                IDreamList? list;
                 switch (listObject) {
                     case DreamObjectAtom or DreamObjectWorld:
                         using (var contents = listObject.GetVariable("contents"))
@@ -797,6 +834,15 @@ namespace OpenDreamRuntime.Procs {
             var type = state.Proc.ObjectTree.Types[typeId];
 
             state.Push(new DreamValue(type));
+            return ProcStatus.Continue;
+        }
+
+        public static ProcStatus PushModifiedType(DMProcState state) {
+            int typeId = state.ReadInt();
+            var type = state.Proc.ObjectTree.Types[typeId];
+            string variableOverridesJson = state.ReadString();
+
+            state.Push(new DreamValue(new DreamModifiedType(type, variableOverridesJson)));
             return ProcStatus.Continue;
         }
 
@@ -1529,6 +1575,14 @@ namespace OpenDreamRuntime.Procs {
             return ProcStatus.Continue;
         }
 
+        public static ProcStatus Compare(DMProcState state) {
+            using var second = state.Pop();
+            using var first = state.Pop();
+
+            state.Push(new DreamValue(CompareValues(first, second)));
+            return ProcStatus.Continue;
+        }
+
         public static ProcStatus CompareNotEquals(DMProcState state) {
             using var second = state.Pop();
             using var first = state.Pop();
@@ -1619,7 +1673,7 @@ namespace OpenDreamRuntime.Procs {
             DreamReference procRef = state.ReadReference();
             var argumentInfo = state.ReadProcArguments();
 
-            DreamObject instance;
+            DreamObject? instance;
             DreamProc proc;
             switch (procRef.Type) {
                 case DMReference.Type.Self: {
@@ -1629,13 +1683,13 @@ namespace OpenDreamRuntime.Procs {
                 }
                 case DMReference.Type.SuperProc: {
                     instance = state.Instance;
-                    proc = state.Proc.SuperProc;
-
-                    if (proc == null) {
+                    if (state.Proc.SuperProc is not { } superProc) {
                         //Attempting to call a super proc where there is none will just return null
                         state.Push(DreamValue.Null);
                         return ProcStatus.Continue;
                     }
+
+                    proc = superProc;
 
                     break;
                 }
@@ -1647,8 +1701,14 @@ namespace OpenDreamRuntime.Procs {
                 }
                 case DMReference.Type.SrcProc: {
                     instance = state.Instance;
-                    if (!instance.TryGetProc(state.ResolveString(procRef.Value), out proc))
-                        throw new Exception($"Type {instance.ObjectDefinition.Type} has no proc called \"{state.ResolveString(procRef.Value)}\"");
+                    if (instance == null)
+                        throw new Exception("Cannot call src proc without an instance");
+
+                    var procName = state.ResolveString(procRef.Value);
+                    if (!instance.TryGetProc(procName, out var srcProc))
+                        throw new Exception($"Type {instance.ObjectDefinition.Type} has no proc called \"{procName}\"");
+
+                    proc = srcProc;
 
                     break;
                 }
@@ -1667,6 +1727,12 @@ namespace OpenDreamRuntime.Procs {
             switch (source.Type) {
                 case DreamValue.DreamValueType.DreamObject: {
                     DreamObject? dreamObject = source.MustGetValueAsDreamObject();
+                    if (dreamObject is DreamObjectExternalProc externalProc) {
+                        DreamProcArguments arguments = state.PopProcArguments(null, argumentsInfo);
+
+                        return CallExtLoaded(state, externalProc, arguments);
+                    }
+
                     using var procId = state.Pop();
                     DreamProc? proc = null;
 
@@ -1961,12 +2027,7 @@ namespace OpenDreamRuntime.Procs {
                 // TODO: Does the rest of the proc get scheduled?
                 // Does the value of the delay mean anything?
             } else {
-                async void Wait() {
-                    await state.ProcScheduler.CreateDelay(delay);
-                    newContext.Resume().Dispose();
-                }
-
-                Wait();
+                state.ProcScheduler.ScheduleSpawn(newContext, delay);
             }
 
             state.Jump(jumpTo);
@@ -2070,7 +2131,7 @@ namespace OpenDreamRuntime.Procs {
                 if (!argListStack.TryGetValueAsDreamList(out var argList))
                     throw new Exception("Invalid gradient() arguments");
 
-                var argListValues = argList.GetValues();
+                var argListValues = argList.EnumerateValues().ToList();
 
                 gradientValues.EnsureCapacity(argListValues.Count - 1);
                 for (int i = 0; i < argListValues.Count; i++) {
@@ -2150,6 +2211,7 @@ namespace OpenDreamRuntime.Procs {
         maptext_width, maptext_height, maptext_x, maptext_y
         luminosity
         pixel_x, pixel_y, pixel_w, pixel_z
+        icon_w, icon_z
         transform
 
         do not animate smoothly:
@@ -2182,14 +2244,23 @@ namespace OpenDreamRuntime.Procs {
                     arguments[argName] = value;
                 }
 
-                if (!arguments.TryGetValue("Object", out var objArg) && argumentsArray[0].Key == DreamValue.Null)
+                var hasObjectArg = arguments.TryGetValue("Object", out var objArg);
+                if (!hasObjectArg && argumentsArray[0].Key == DreamValue.Null) {
                     objArg = argumentsArray[0].Value;
+                    hasObjectArg = true;
+                }
 
                 bool chainAnim = false;
 
                 if (!objArg.TryGetValueAsDreamObject<DreamObject>(out var obj)) {
+                    if (hasObjectArg && objArg.IsNull) {
+                        state.Push(DreamValue.Null);
+                        return ProcStatus.Continue;
+                    }
+
                     if (state.Thread.LastAnimatedObject is null || state.Thread.LastAnimatedObject.Value.IsNull) {
-                        throw new Exception("animate() called without an object and no previous object to animate");
+                        state.Push(DreamValue.Null);
+                        return ProcStatus.Continue;
                     } else if (!state.Thread.LastAnimatedObject.Value.TryGetValueAsDreamObject<DreamObject>(out obj)) {
                         state.Push(DreamValue.Null);
                         return ProcStatus.Continue;
@@ -2198,6 +2269,8 @@ namespace OpenDreamRuntime.Procs {
                     chainAnim = true;
                 }
 
+                obj.IncRef();
+                state.Thread.LastAnimatedObject?.Dispose();
                 state.Thread.LastAnimatedObject = new DreamValue(obj);
                 if (obj.IsSubtypeOf(state.Proc.ObjectTree.Filter)) { //TODO animate filters
                     state.Push(DreamValue.Null);
@@ -2209,10 +2282,18 @@ namespace OpenDreamRuntime.Procs {
                 arguments.TryGetValue("easing", out var easingArg);
                 arguments.TryGetValue("flags", out var flagsArg);
                 arguments.TryGetValue("delay", out var delayArg);
+                arguments.TryGetValue("tag", out var tagArg);
+                arguments.TryGetValue("command", out var commandArg);
                 loopArg.TryGetValueAsInteger(out int loop);
                 easingArg.TryGetValueAsInteger(out int easing);
                 flagsArg.TryGetValueAsInteger(out int flagsInt);
                 delayArg.TryGetValueAsInteger(out int delay);
+                string? tag = null;
+                if (tagArg.TryGetValueAsString(out var tagString) && tagString.Length > 0)
+                    tag = tagString;
+                string? command = null;
+                if (commandArg.TryGetValueAsString(out var commandString) && commandString.Length > 0)
+                    command = commandString;
 
                 if (!timeArg.TryGetValueAsFloat(out float time)) {
                     // A non-number time arg results in the animation happening instantly
@@ -2223,14 +2304,22 @@ namespace OpenDreamRuntime.Procs {
                     throw new ArgumentOutOfRangeException("easing", easing, $"Invalid easing value in animate(): {easing}");
 
                 var flags = (AnimationFlags)flagsInt;
+                if (tag is not null)
+                    flags |= AnimationFlags.AnimationParallel;
                 if ((flags & (AnimationFlags.AnimationParallel | AnimationFlags.AnimationContinue)) != 0)
                     chainAnim = true;
                 if ((flags & AnimationFlags.AnimationEndNow) != 0)
                     chainAnim = false;
 
                 var atomManager = state.Proc.AtomManager;
+                if (tag is not null && !arguments.Any(arg => atomManager.IsValidAppearanceVar(arg.Key))) {
+                    atomManager.StopAppearanceAnimation(obj, tag);
+                    state.Push(DreamValue.Null);
+                    return ProcStatus.Continue;
+                }
+
                 var duration = TimeSpan.FromMilliseconds(time * 100);
-                atomManager.AnimateAppearance(obj, duration, (AnimationEasing)easing, loop, flags, delay, chainAnim, appearance => {
+                atomManager.AnimateAppearance(obj, duration, (AnimationEasing)easing, loop, flags, delay, chainAnim, tag, command, appearance => {
                     bool isRelative = flags.HasFlag(AnimationFlags.AnimationRelative);
 
                     foreach (var arg in arguments) {
@@ -2274,6 +2363,8 @@ namespace OpenDreamRuntime.Procs {
                                 case "pixel_y":
                                 case "pixel_z":
                                 case "pixel_w":
+                                case "icon_z":
+                                case "icon_w":
                                 case "maptext_width":
                                 case "maptext_height":
                                 case "maptext_x":
@@ -2360,7 +2451,7 @@ namespace OpenDreamRuntime.Procs {
                     return ProcStatus.Continue;
                 }
 
-                foreach (DreamValue containerItem in containerList.GetValues()) {
+                foreach (DreamValue containerItem in containerList.EnumerateValues()) {
                     DreamObjectDefinition itemDef;
                     if (containerItem.TryGetValueAsType(out var type)) {
                         itemDef = type.ObjectDefinition;
@@ -2406,7 +2497,7 @@ namespace OpenDreamRuntime.Procs {
                 values[i] = (value, totalWeight);
             }
 
-            double pick = state.DreamManager.Random.NextDouble() * totalWeight;
+            double pick = state.DreamManager.Random.NextFloat() * totalWeight;
             for (int i = 0; i < values.Length; i++) {
                 if (pick < values[i].CumulativeWeight) {
                     state.Push(values[i].Value);
@@ -2425,7 +2516,7 @@ namespace OpenDreamRuntime.Procs {
 
                 List<DreamValue> values;
                 if (value.TryGetValueAsDreamList(out var list)) {
-                    values = list.GetValues();
+                    values = list.EnumerateValues().ToList();
                 } else {
                     state.Push(value);
                     return ProcStatus.Continue;
@@ -2438,10 +2529,14 @@ namespace OpenDreamRuntime.Procs {
             } else {
                 int pickedIndex = state.DreamManager.Random.Next(0, count);
                 var possibleValues = state.PopCount(count);
+                var pickedValue = possibleValues[pickedIndex];
+                pickedValue.IncRef();
 
-                state.Push(possibleValues[pickedIndex]);
                 foreach (var value in possibleValues)
                     value.Dispose();
+                state.ReleasePoppedStackValues(count);
+                state.Push(pickedValue);
+                pickedValue.DecRef();
             }
 
             return ProcStatus.Continue;
@@ -2451,7 +2546,8 @@ namespace OpenDreamRuntime.Procs {
             using var probability = state.Pop();
 
             if (probability.TryGetValueAsFloat(out float probabilityValue)) {
-                int result = (state.DreamManager.Random.Prob(probabilityValue / 100)) ? 1 : 0;
+                probabilityValue = Math.Clamp(probabilityValue / 100, 0, 1);
+                int result = state.DreamManager.Random.Prob(probabilityValue) ? 1 : 0;
 
                 state.Push(new DreamValue(result));
             } else {
@@ -2475,13 +2571,13 @@ namespace OpenDreamRuntime.Procs {
                 throw new Exception($"Invalid var for issaved() call: {key}");
             }
 
-            if (owner.TryGetValueAsDreamObject(out DreamObject dreamObject)) {
+            if (owner.TryGetValueAsDreamObject<DreamObject>(out var dreamObject)) {
                 state.Push(dreamObject.IsSaved(property) ? DreamValue.True : DreamValue.False);
                 return ProcStatus.Continue;
             }
 
             DreamObjectDefinition objectDefinition;
-            if (owner.TryGetValueAsDreamObject(out var dreamObject2)) {
+            if (owner.TryGetValueAsDreamObject<DreamObject>(out var dreamObject2)) {
                 objectDefinition = dreamObject2.ObjectDefinition;
             } else if (owner.TryGetValueAsType(out var type)) {
                 objectDefinition = type.ObjectDefinition;
@@ -2601,9 +2697,11 @@ namespace OpenDreamRuntime.Procs {
                 throw new Exception($"Invalid browse() recipient: expected mob, client, or world, got {receiver}");
             }
 
+            DreamResource? browseResource = null;
             string? browseValue;
             if (bodyStack.TryGetValueAsDreamResource(out var resource)) {
-                browseValue = resource.ReadAsString();
+                browseResource = resource;
+                browseValue = null;
             } else if (bodyStack.TryGetValueAsString(out browseValue) || bodyStack.IsNull) {
                 // Got it.
             } else {
@@ -2611,7 +2709,10 @@ namespace OpenDreamRuntime.Procs {
             }
 
             foreach (DreamConnection client in clients) {
-                client.Browse(browseValue, options);
+                if (browseResource != null)
+                    client.Browse(browseResource, options);
+                else
+                    client.Browse(browseValue, options);
             }
 
             return ProcStatus.Continue;
@@ -2642,7 +2743,7 @@ namespace OpenDreamRuntime.Procs {
                 throw new Exception("Invalid browse_rsc() recipient");
             }
 
-            connection?.BrowseResource(file, filename.IsNull ? Path.GetFileName(file.ResourcePath) : filename.GetValueAsString());
+            connection?.BrowseResource(file, filename.TryGetValueAsString(out var resourceFileName) ? resourceFileName : Path.GetFileName(file.ResourcePath) ?? string.Empty);
             return ProcStatus.Continue;
         }
 
@@ -2663,7 +2764,8 @@ namespace OpenDreamRuntime.Procs {
             using var controlStack = state.Pop();
             using var messageStack = state.Pop();
             using var receiverStack = state.Pop();
-            string control = controlStack.GetValueAsString();
+            controlStack.TryGetValueAsString(out var control);
+            control ??= string.Empty;
             string message = messageStack.Stringify();
             if (!receiverStack.TryGetValueAsDreamObject<DreamObject>(out var receiver))
                 return ProcStatus.Continue;
@@ -2681,7 +2783,7 @@ namespace OpenDreamRuntime.Procs {
                 }
             } else if (receiver is DreamList list) {
                 // Output to every mob in the left-hand list.
-                foreach (var entry in list.GetValues()) {
+                foreach (var entry in list.EnumerateValues()) {
                     if (entry.TryGetValueAsDreamObject(out var entryObj)) {
                         if (entryObj is DreamObjectMob entryMob) {
                             entryMob.Connection?.OutputControl(message, control);
@@ -2799,7 +2901,7 @@ namespace OpenDreamRuntime.Procs {
             if (!name.TryGetValueAsString(out var suggestedName))
                 suggestedName = Path.GetFileName(resource.ResourcePath) ?? string.Empty;
 
-            connection.SendFile(resource, suggestedName);
+            connection?.SendFile(resource, suggestedName);
             return ProcStatus.Continue;
         }
 
@@ -2822,13 +2924,15 @@ namespace OpenDreamRuntime.Procs {
             int estimatedStringSize = count * 10; // FIXME: We can do better with string size prediction here.
             var builder = new StringBuilder(estimatedStringSize);
 
-            foreach (DreamValue add in state.PopCount(count)) {
+            var popped = state.PopCount(count);
+            foreach (DreamValue add in popped) {
                 if (add.TryGetValueAsString(out var addStr)) {
                     builder.Append(addStr);
                 }
 
                 add.Dispose();
             }
+            state.ReleasePoppedStackValues(count);
 
             state.Push(new DreamValue(builder.ToString()));
             return ProcStatus.Continue;
@@ -2878,6 +2982,19 @@ namespace OpenDreamRuntime.Procs {
             if (first.IsNull) return second.IsNull;
             if (second.IsNull) return false; // If this were ever true the above condition would have handled it
 
+            if (first.Type != second.Type) {
+                if (first.Type == DreamValue.DreamValueType.DreamType &&
+                    second.Type == DreamValue.DreamValueType.ModifiedDreamType)
+                    return first.MustGetValueAsType().Equals(second.MustGetValueAsType());
+
+                if (first.Type == DreamValue.DreamValueType.ModifiedDreamType &&
+                    second.Type == DreamValue.DreamValueType.DreamType)
+                    return first.TryGetValueAsModifiedType(out var firstModified) &&
+                        firstModified.Type.Equals(second.MustGetValueAsType());
+
+                return false;
+            }
+
             // Now we don't have to worry about null for the rest of this method
             switch (first.Type) {
                 case DreamValue.DreamValueType.DreamObject: {
@@ -2922,6 +3039,22 @@ namespace OpenDreamRuntime.Procs {
 
                     switch (second.Type) {
                         case DreamValue.DreamValueType.DreamType: return firstValue.Equals(second.MustGetValueAsType());
+                        case DreamValue.DreamValueType.ModifiedDreamType: return firstValue.Equals(second.MustGetValueAsType());
+                        case DreamValue.DreamValueType.Float:
+                        case DreamValue.DreamValueType.DreamObject:
+                        case DreamValue.DreamValueType.String: return false;
+                    }
+
+                    break;
+                }
+                case DreamValue.DreamValueType.ModifiedDreamType: {
+                    if (!first.TryGetValueAsModifiedType(out var firstValue))
+                        return false;
+
+                    switch (second.Type) {
+                        case DreamValue.DreamValueType.ModifiedDreamType:
+                            return second.TryGetValueAsModifiedType(out var secondValue) && firstValue.Equals(secondValue);
+                        case DreamValue.DreamValueType.DreamType: return firstValue.Type.Equals(second.MustGetValueAsType());
                         case DreamValue.DreamValueType.Float:
                         case DreamValue.DreamValueType.DreamObject:
                         case DreamValue.DreamValueType.String: return false;
@@ -2964,6 +3097,29 @@ namespace OpenDreamRuntime.Procs {
 
             // Behaviour is otherwise equivalent (pun intended) to ==
             return IsEqual(first, second);
+        }
+
+        private static int CompareValues(DreamValue first, DreamValue second) {
+            if (IsCompareEqual(first, second))
+                return 0;
+
+            return IsLessThan(first, second) ? -1 : 1;
+        }
+
+        private static bool IsCompareEqual(DreamValue first, DreamValue second) {
+            if (IsEqual(first, second))
+                return true;
+
+            if (first.TryGetValueAsFloat(out var lhs) && lhs == 0.0f && second.IsNull)
+                return true;
+
+            if (first.IsNull && second.TryGetValueAsFloat(out var rhs) && rhs == 0.0f)
+                return true;
+
+            if (first.IsNull && second.TryGetValueAsString(out var str) && str == string.Empty)
+                return true;
+
+            return false;
         }
 
         private static bool IsGreaterThan(DreamValue first, DreamValue second) {
@@ -3013,19 +3169,19 @@ namespace OpenDreamRuntime.Procs {
                 List<DreamValue> values;
 
                 if (second.TryGetValueAsDreamList(out var secondList)) {
-                    values = secondList.GetValues();
+                    values = secondList.EnumerateValues().ToList();
                 } else {
                     values = new List<DreamValue> { second };
                 }
 
                 foreach (DreamValue value in values) {
                     bool inFirstList = list.ContainsValue(value);
-                    bool inSecondList = secondList.ContainsValue(value);
+                    bool inSecondList = secondList?.ContainsValue(value) == true;
 
                     if (inFirstList ^ inSecondList) {
                         newList.AddValue(value);
 
-                        using var associatedValue = inFirstList ? list.GetValue(value) : secondList.GetValue(value);
+                        using var associatedValue = inFirstList ? list.GetValue(value) : secondList?.GetValue(value) ?? DreamValue.Null;
                         if (!associatedValue.IsNull) newList.SetValue(value, associatedValue);
                     }
                 }
@@ -3074,7 +3230,7 @@ namespace OpenDreamRuntime.Procs {
                 if (!gradientValues[0].TryGetValueAsDreamList(out var gradientList))
                     throw new Exception("Invalid gradient() values; expected either a list or at least 2 values");
 
-                gradientValues = gradientList.GetValues();
+                gradientValues = gradientList.EnumerateValues().ToList();
             }
 
             if (!indexValue.TryGetValueAsFloat(out float index))

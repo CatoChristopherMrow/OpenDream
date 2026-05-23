@@ -50,17 +50,14 @@ public static class DMIParser {
         public string ExportAsText() {
             StringBuilder text = new();
 
-            text.AppendLine("# BEGIN DMI");
-
-            // This could either end up compressed or decompressed depending on how large this text ends up being.
-            // So go with version 3.0, BYOND doesn't seem to care either way
-            text.AppendLine("version = 3.0");
+            text.Append("# BEGIN DMI\n");
+            text.Append("version = 4.0\n");
             text.Append("\twidth = ");
             text.Append(Width);
-            text.AppendLine();
+            text.Append('\n');
             text.Append("\theight = ");
             text.Append(Height);
-            text.AppendLine();
+            text.Append('\n');
 
             foreach (var state in States.Values) {
                 state.ExportAsText(text);
@@ -167,36 +164,38 @@ public static class DMIParser {
         public void ExportAsText(StringBuilder text) {
             text.Append("state = \"");
             text.Append(Name);
-            text.AppendLine("\"");
+            text.Append("\"\n");
 
             text.Append("\tdirs = ");
             text.Append(GetExportedDirectionCount(Directions));
-            text.AppendLine();
+            text.Append('\n');
 
             text.Append("\tframes = ");
             text.Append(FrameCount);
-            text.AppendLine();
+            text.Append('\n');
 
             if (Directions.Count > 0) {
-                text.Append("\tdelay = ");
                 var frames = Directions.Values.First(); // Delays should be the same in each direction
-                for (int i = 0; i < frames.Length; i++) {
-                    var delay = frames[i].Delay.TotalMilliseconds / 100; // Convert back to deciseconds
+                if (frames.Length > 1 || frames.Any(frame => frame.Delay != TimeSpan.FromMilliseconds(100))) {
+                    text.Append("\tdelay = ");
+                    for (int i = 0; i < frames.Length; i++) {
+                        var delay = frames[i].Delay.TotalMilliseconds / 100; // Convert back to deciseconds
 
-                    text.Append(delay.ToString(CultureInfo.InvariantCulture));
-                    if (i != frames.Length - 1)
-                        text.Append(',');
+                        text.Append(delay.ToString(CultureInfo.InvariantCulture));
+                        if (i != frames.Length - 1)
+                            text.Append(',');
+                    }
+
+                    text.Append('\n');
                 }
-
-                text.AppendLine();
             }
 
             if (!Loop) {
-                text.AppendLine("\tloop = 0");
+                text.Append("\tloop = 0\n");
             }
 
             if (Rewind) {
-                text.AppendLine("\trewind = 1");
+                text.Append("\trewind = 1\n");
             }
         }
 

@@ -1,5 +1,6 @@
 using OpenDreamRuntime.Objects;
 using OpenDreamShared.Dream;
+using System.Linq;
 using System.Text.RegularExpressions;
 using OpenDreamRuntime.Objects.Types;
 using System.Text;
@@ -111,7 +112,9 @@ internal static partial class DreamProcNativeHelpers {
             int leftColumnX = centerPos.X - d;
             int startingLeftColumnY = centerPos.Y - d;
             for (int i = 0; i < sideLength; ++i) {
-                yield return tiles[leftColumnX, startingLeftColumnY + i];
+                var y = startingLeftColumnY + i;
+                if (leftColumnX >= 0 && leftColumnX < width && y >= 0 && y < height)
+                    yield return tiles[leftColumnX, y];
             }
 
             //The criss-cross-apple-sauce
@@ -119,17 +122,24 @@ internal static partial class DreamProcNativeHelpers {
             int startingCrossX = centerPos.X - d + 1;
             for(int i = 0; i < crissCrossLength; ++i) {
                 //the criss
-                yield return tiles[startingCrossX + i, centerPos.Y - d];
+                var x = startingCrossX + i;
+                var crissY = centerPos.Y - d;
+                if (x >= 0 && x < width && crissY >= 0 && crissY < height)
+                    yield return tiles[x, crissY];
 
                 //the cross
-                yield return tiles[startingCrossX + i, centerPos.Y + d];
+                var crossY = centerPos.Y + d;
+                if (x >= 0 && x < width && crossY >= 0 && crossY < height)
+                    yield return tiles[x, crossY];
             }
 
             //The right column
             int rightColumnX = centerPos.X + d;
             int startingRightColumnY = centerPos.Y - d;
             for (int i = 0; i < sideLength; ++i) {
-                yield return tiles[rightColumnX, startingRightColumnY + i];
+                var y = startingRightColumnY + i;
+                if (rightColumnX >= 0 && rightColumnX < width && y >= 0 && y < height)
+                    yield return tiles[rightColumnX, y];
             }
         }
     }
@@ -180,7 +190,7 @@ internal static partial class DreamProcNativeHelpers {
 
                 var appearance = atomManager.MustGetAppearance(cell.Turf);
                 var tile = new ViewAlgorithm.Tile() {
-                    Opaque = appearance.Opacity,
+                    Opaque = appearance?.Opacity ?? false,
                     Luminosity = 0,
                     DeltaX = deltaX,
                     DeltaY = deltaY
@@ -189,7 +199,7 @@ internal static partial class DreamProcNativeHelpers {
                 foreach (var movable in cell.Movables) {
                     appearance = atomManager.MustGetAppearance(movable);
 
-                    tile.Opaque |= appearance.Opacity;
+                    tile.Opaque |= appearance?.Opacity ?? false;
                 }
 
                 tiles[viewX, viewY] = tile;
@@ -359,7 +369,7 @@ internal static partial class DreamProcNativeHelpers {
     /// <returns>True if the list was successfully parsed, false if not.</returns>
     public static bool TryParseColorMatrix(DreamList list, out ColorMatrix matrix) {
         matrix = ColorMatrix.Identity;
-        var listArray = list.GetValues();
+        var listArray = list.EnumerateValues().ToList();
         try {
             switch (list.GetLength()) {
                 case 0:
@@ -434,7 +444,7 @@ internal static partial class DreamProcNativeHelpers {
     /// It's a very BYONDish converter. Probably, you don't want to reuse it somewhere aside from the text2num implementation
     /// </remarks>
     public static double? StringToDouble(ReadOnlySpan<char> value, int radix) {
-        if (value == null || value.IsEmpty)
+        if (value.IsEmpty)
             return null;
 
         if (radix < 2 || radix > 36)
@@ -468,7 +478,7 @@ internal static partial class DreamProcNativeHelpers {
             if (!char.IsAsciiDigit(c)) {
                 if (c >= 'A' && c < 'A' + letterDigitsVariety) {
                     digit -= 'A' - 10;
-                } else if (c >= 'a' && c <= 'a' + letterDigitsVariety) {
+                } else if (c >= 'a' && c < 'a' + letterDigitsVariety) {
                     digit -= 'a' - 10;
                 } else {
                     break;
@@ -564,6 +574,9 @@ internal static partial class DreamProcNativeHelpers {
     /// </summary>
     public static DreamObjectTurf? GetStep(AtomManager atomManager, IDreamMapManager mapManager, DreamObjectAtom loc,
         AtomDirection dir) {
+        if (loc.Deleted)
+            return null;
+
         var dirInt = (int)dir;
         var locPos = atomManager.GetAtomPosition(loc);
 

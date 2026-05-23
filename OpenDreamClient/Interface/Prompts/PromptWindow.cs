@@ -8,7 +8,7 @@ namespace OpenDreamClient.Interface.Prompts;
 
 public abstract class PromptWindow : OSWindow {
     protected readonly Control InputControl;
-    protected string DefaultButton;
+    protected string DefaultButton = string.Empty;
 
     private readonly BoxContainer _buttonPanel;
     private bool _promptFinished;

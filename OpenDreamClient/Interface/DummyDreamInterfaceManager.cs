@@ -20,6 +20,7 @@ public sealed partial class DummyDreamInterfaceManager : IDreamInterfaceManager 
     public ViewRange View => new(5);
     public bool ShowPopupMenus => true;
     public int IconSize => 32;
+    public MapFormat MapFormat => MapFormat.TopDown;
     public CursorHolder Cursors => null!;
 
     [Dependency] private IClientNetManager _netManager = default!;
@@ -54,7 +55,7 @@ public sealed partial class DummyDreamInterfaceManager : IDreamInterfaceManager 
     public void Prompt(DreamValueType types, string title, string message, string defaultValue, Action<DreamValueType, object?>? onClose) {
     }
 
-    public void RunCommand(string fullCommand, bool repeating = false) {
+    public void RunCommand(string fullCommand, bool repeating = false, NetEntity? atomContext = null, string? atomRefContext = null) {
     }
 
     public void StopRepeatingCommand(string command) {

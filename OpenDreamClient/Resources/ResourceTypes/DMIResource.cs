@@ -1,7 +1,10 @@
 ﻿using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using OpenDreamShared.Dream;
 using OpenDreamShared.Resources;
 using Robust.Client.Graphics;
+using Robust.Shared.Asynchronous;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
@@ -13,36 +16,76 @@ public sealed class DMIResource : DreamResource {
     public Vector2i IconSize;
     public DMIParser.ParsedDMIDescription Description;
 
-    private readonly Dictionary<string, State> _states;
+    private readonly IClyde _clyde;
+    private readonly ITaskManager _taskManager;
+    private readonly int _mainThreadId;
+    private Dictionary<string, State> _states;
 
-    public DMIResource(int id, byte[] data) : base(id, data) {
-        _states = new Dictionary<string, State>();
-        ProcessDMIData();
+    public DMIResource(int id, byte[] data, IClyde clyde, ITaskManager taskManager, int mainThreadId) : base(id, data) {
+        _clyde = clyde;
+        _taskManager = taskManager;
+        _mainThreadId = mainThreadId;
+        var processedData = ProcessDMIData();
+        Texture = processedData.Texture;
+        IconSize = processedData.IconSize;
+        Description = processedData.Description;
+        _states = processedData.States;
     }
 
     public override void UpdateData(byte[] data) {
         base.UpdateData(data);
-        ProcessDMIData();
+        ApplyDMIData(ProcessDMIData());
     }
 
-    private void ProcessDMIData() {
+    private ProcessedDMIData ProcessDMIData() {
         using Stream dmiStream = new MemoryStream(Data);
         DMIParser.ParsedDMIDescription description = DMIParser.ParseDMI(dmiStream);
 
         dmiStream.Seek(0, SeekOrigin.Begin);
 
         Image<Rgba32> image = Image.Load<Rgba32>(dmiStream);
-        Texture = IoCManager.Resolve<IClyde>().LoadTextureFromImage(image, name: $"DMI Resource #{Id}");
-        IconSize = new Vector2i(description.Width, description.Height);
-        Description = description;
-
-        _states.Clear();
-        foreach (DMIParser.ParsedDMIState parsedState in description.States.Values) {
-            State state = new State(Texture, parsedState, description.Width, description.Height);
-
-            _states.Add(parsedState.Name, state);
-        }
+        return LoadTextureOnMainThread(image, description);
     }
+
+    private ProcessedDMIData FinalizeDMIData(Image<Rgba32> image, DMIParser.ParsedDMIDescription description) {
+        var texture = _clyde.LoadTextureFromImage(image, name: $"DMI Resource #{Id}");
+        var iconSize = new Vector2i(description.Width, description.Height);
+        var states = new Dictionary<string, State>();
+        foreach (DMIParser.ParsedDMIState parsedState in description.States.Values) {
+            State state = new State(texture, parsedState, description.Width, description.Height);
+
+            states.Add(parsedState.Name, state);
+        }
+
+        return new ProcessedDMIData(texture, iconSize, description, states);
+    }
+
+    private ProcessedDMIData LoadTextureOnMainThread(Image<Rgba32> image, DMIParser.ParsedDMIDescription description) {
+        if (Environment.CurrentManagedThreadId == _mainThreadId) {
+            return FinalizeDMIData(image, description);
+        }
+
+        TaskCompletionSource<ProcessedDMIData> finished = new();
+
+        _taskManager.RunOnMainThread(() => {
+            try {
+                finished.SetResult(FinalizeDMIData(image, description));
+            } catch (Exception e) {
+                finished.SetException(e);
+            }
+        });
+
+        return finished.Task.GetAwaiter().GetResult();
+    }
+
+    private void ApplyDMIData(ProcessedDMIData data) {
+        Texture = data.Texture;
+        IconSize = data.IconSize;
+        Description = data.Description;
+        _states = data.States;
+    }
+
+    private sealed record ProcessedDMIData(Texture Texture, Vector2i IconSize, DMIParser.ParsedDMIDescription Description, Dictionary<string, State> States);
 
     public State? GetState(string? stateName) {
         if (stateName == null || !_states.ContainsKey(stateName))
@@ -71,6 +114,39 @@ public sealed class DMIResource : DreamResource {
         var hotspot = state.Hotspot ?? (0, stateImage.Height - 1); // Default to the top-left
         var cursor = clyde.CreateCursor(stateImage, hotspot);
         return cursor;
+    }
+
+    public byte[]? GetStateAsPng(string? stateName, AtomDirection direction = AtomDirection.South, int frame = 0) {
+        using var dmiStream = new MemoryStream(Data);
+        var description = DMIParser.ParseDMI(dmiStream);
+
+        dmiStream.Seek(0, SeekOrigin.Begin);
+
+        using var image = Image.Load<Rgba32>(dmiStream);
+        var state = description.GetStateOrDefault(stateName);
+        if (state == null)
+            return null;
+
+        var frames = state.GetFrames(direction);
+        if (frames.Length == 0)
+            return null;
+
+        frame = Math.Clamp(frame, 0, frames.Length - 1);
+        var dmiFrame = frames[frame];
+        using var stateImage = image.Clone(clone => {
+            clone.Crop(new Rectangle(dmiFrame.X, dmiFrame.Y, description.Width, description.Height));
+        });
+
+        using var output = new MemoryStream();
+        stateImage.SaveAsPng(output);
+        return output.ToArray();
+    }
+
+    public string DescribeStatesForLog(int maxStates = 12) {
+        var stateNames = Description.States.Keys.Take(maxStates);
+        var suffix = Description.States.Count > maxStates ? ", ..." : string.Empty;
+
+        return string.Join(", ", stateNames) + suffix;
     }
 
     public struct State {

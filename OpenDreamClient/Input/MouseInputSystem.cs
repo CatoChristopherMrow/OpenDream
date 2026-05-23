@@ -77,12 +77,12 @@ internal sealed partial class MouseInputSystem : SharedMouseInputSystem {
             return OnRelease(viewport, args);
     }
 
-    public void HandleStatClick(string atomRef, bool isRight, bool isMiddle) {
+    public void HandleStatClick(string atomRef, MouseButton button) {
         bool shift = _inputManager.IsKeyDown(Keyboard.Key.Shift);
         bool ctrl = _inputManager.IsKeyDown(Keyboard.Key.Control);
         bool alt = _inputManager.IsKeyDown(Keyboard.Key.Alt);
 
-        RaiseNetworkEvent(new StatClickedEvent(atomRef, isRight, isMiddle, shift, ctrl, alt));
+        RaiseNetworkEvent(new StatClickedEvent(atomRef, button, shift, ctrl, alt));
     }
 
     public void HandleAtomMouseEntered(ScalingViewport viewport, Vector2 relativePos, ClientObjectReference atomRef, Vector2i iconPos) {
@@ -253,8 +253,7 @@ internal sealed partial class MouseInputSystem : SharedMouseInputSystem {
     }
 
     private ClickParams CreateClickParams(ScalingViewport viewport, GUIBoundKeyEventArgs args, Vector2i iconPos) {
-        bool right = args.Function == EngineKeyFunctions.UIRightClick;
-        bool middle = args.Function == OpenDreamKeyFunctions.MouseMiddle;
+        MouseButton button = GetMouseButton(args.Function);
         bool shift = _inputManager.IsKeyDown(Keyboard.Key.Shift);
         bool ctrl = _inputManager.IsKeyDown(Keyboard.Key.Control);
         bool alt = _inputManager.IsKeyDown(Keyboard.Key.Alt);
@@ -264,7 +263,7 @@ internal sealed partial class MouseInputSystem : SharedMouseInputSystem {
         ScreenLocation screenLoc = new ScreenLocation((int)screenLocPos.X, (int)screenLocY, 32); // TODO: icon_size other than 32
 
         // TODO: Take icon transformations into account for iconPos
-        return new(screenLoc, right, middle, shift, ctrl, alt, iconPos.X, iconPos.Y);
+        return new(screenLoc, button, shift, ctrl, alt, iconPos.X, iconPos.Y);
     }
 
     /// <summary>
@@ -278,7 +277,20 @@ internal sealed partial class MouseInputSystem : SharedMouseInputSystem {
         ScreenLocation screenLoc = new ScreenLocation((int) screenLocPos.X, (int) screenLocY, 32); // TODO: icon_size other than 32
 
         // TODO: Take icon transformations into account for iconPos
-        return new(screenLoc, false, false, false, false, false, iconPos.X, iconPos.Y);
+        return new(screenLoc, MouseButton.Left, false, false, false, iconPos.X, iconPos.Y);
+    }
+
+    public static MouseButton GetMouseButton(BoundKeyFunction function) {
+        if (function == EngineKeyFunctions.UIRightClick)
+            return MouseButton.Right;
+        if (function == OpenDreamKeyFunctions.MouseMiddle)
+            return MouseButton.Middle;
+        if (function == OpenDreamKeyFunctions.MouseButton4)
+            return MouseButton.Mouse4;
+        if (function == OpenDreamKeyFunctions.MouseButton5)
+            return MouseButton.Mouse5;
+
+        return MouseButton.Left;
     }
 
     private bool HasMouseEventEnabled(ClientObjectReference atomRef, AtomMouseEvents mouseEvent) {

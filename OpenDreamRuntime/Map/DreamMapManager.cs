@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Runtime.InteropServices;
 using DMCompiler.Json;
 using OpenDreamRuntime.Objects;
 using OpenDreamRuntime.Objects.Types;
@@ -75,12 +76,7 @@ public sealed partial class DreamMapManager : IDreamMapManager {
             if (level.QueuedTileUpdates.Count == 0)
                 continue;
 
-            List<(Vector2i, Tile)> tiles = new(level.QueuedTileUpdates.Count);
-            foreach (var tileUpdate in level.QueuedTileUpdates) {
-                tiles.Add(tileUpdate);
-            }
-
-            _mapSystem.SetTiles(level.Grid, tiles);
+            _mapSystem.SetTiles(level.Grid, level.QueuedTileUpdates);
             level.QueuedTileUpdates.Clear();
         }
     }
@@ -182,28 +178,8 @@ public sealed partial class DreamMapManager : IDreamMapManager {
         SetTurf((turf.X, turf.Y), turf.Z, type, creationArguments);
     }
 
-    /// <summary>
-    /// Caches the turf/area appearance pair instead of recreating and re-registering it for every turf in the game.
-    /// This is cleared out when an area appearance changes
-    /// </summary>
-    private readonly Dictionary<ValueTuple<ImmutableAppearance, uint>, ImmutableAppearance> _turfAreaLookup = new();
-
     public void SetTurfAppearance(DreamObjectTurf turf, ImmutableAppearance appearance) {
         appearance.EnabledMouseEvents = _atomManager.GetEnabledMouseEvents(turf);
-
-        if (turf.Cell.Area.Appearance != _appearanceSystem.DefaultAppearance) {
-            if (!appearance.Overlays.Contains(turf.Cell.Area.Appearance)) {
-                if (!_turfAreaLookup.TryGetValue((appearance, turf.Cell.Area.Appearance.MustGetId()), out var newAppearance)) {
-                    var mutable = appearance.ToMutable();
-
-                    mutable.Overlays.Add(turf.Cell.Area.Appearance);
-                    newAppearance = _appearanceSystem.AddAppearance(mutable);
-                    _turfAreaLookup.Add((appearance, turf.Cell.Area.Appearance.MustGetId()), newAppearance);
-                }
-
-                appearance = newAppearance;
-            }
-        }
 
         var level = _levels[turf.Z - 1];
         var turfId = appearance.MustGetId();
@@ -219,35 +195,8 @@ public sealed partial class DreamMapManager : IDreamMapManager {
     }
 
     public void SetAreaAppearance(DreamObjectArea area, MutableAppearance appearance) {
-        //if an area changes appearance, invalidate the lookup
-        _turfAreaLookup.Clear();
-        var oldAppearance = area.Appearance;
         appearance.AppearanceFlags |= AppearanceFlags.ResetColor | AppearanceFlags.ResetAlpha | AppearanceFlags.ResetTransform;
         area.Appearance  = _appearanceSystem.AddAppearance(appearance);
-
-        //get all unique turf appearances
-        //create the new version of each of those appearances
-        //for each turf, update the appropriate ID
-
-        Dictionary<ImmutableAppearance, ImmutableAppearance> oldToNewAppearance = new();
-        foreach (var turf in area.Turfs) {
-            if(oldToNewAppearance.TryGetValue(turf.Appearance, out var newAppearance))
-                turf.Appearance = newAppearance;
-            else {
-                MutableAppearance turfAppearance = _atomManager.MustGetAppearance(turf).ToMutable();
-
-                turfAppearance.Overlays.Remove(oldAppearance);
-                turfAppearance.Overlays.Add(area.Appearance);
-                newAppearance = _appearanceSystem.AddAppearance(turfAppearance);
-                oldToNewAppearance.Add(turf.Appearance, newAppearance);
-                turf.Appearance = newAppearance;
-            }
-
-            var level = _levels[turf.Z - 1];
-            var turfId = newAppearance.MustGetId();
-            var turfPos = new Vector2i(turf.X, turf.Y);
-            level.QueuedTileUpdates.Add( (turfPos, new Tile((int)turfId)));
-        }
     }
 
     public bool TryGetCellAt(Vector2i pos, int z, [NotNullWhen(true)] out Cell? cell) {
@@ -268,6 +217,26 @@ public sealed partial class DreamMapManager : IDreamMapManager {
 
         turf = null;
         return false;
+    }
+
+    public DreamList CreateTurfsBlock(int startX, int startY, int startZ, int endX, int endY, int endZ) {
+        int valueCount = (endX - startX + 1) * (endY - startY + 1) * (endZ - startZ + 1);
+        var values = new List<DreamValue>(valueCount);
+        CollectionsMarshal.SetCount(values, valueCount);
+        var valueSpan = CollectionsMarshal.AsSpan(values);
+        var valueIndex = 0;
+
+        for (int z = startZ; z <= endZ; z++) {
+            var cells = _levels[z - 1].Cells;
+
+            for (int y = startY; y <= endY; y++) {
+                for (int x = startX; x <= endX; x++) {
+                    valueSpan[valueIndex++] = new(cells[x - 1, y - 1].Turf);
+                }
+            }
+        }
+
+        return new DreamList(_objectTree.List.ObjectDefinition, values, null);
     }
 
     //Returns an area loaded by a DMM
@@ -327,7 +296,7 @@ public sealed partial class DreamMapManager : IDreamMapManager {
                         if (x > size.X || y > size.Y) {
                             var deleteCell = oldCells[x - 1, y - 1];
                             deleteCell.Turf.DecRef();
-                            deleteCell.Turf.Delete();
+                            deleteCell.Turf.HardDelete();
                             _mapSystem.SetTile(existingLevel.Grid, new Vector2i(x, y), Tile.Empty);
                             foreach (var movableToDelete in deleteCell.Movables) {
                                 movableToDelete.DecRef();
@@ -343,6 +312,8 @@ public sealed partial class DreamMapManager : IDreamMapManager {
     }
 
     public void SetZLevels(int levels) {
+        levels = Math.Max(levels, 0);
+
         if (levels > Levels) {
             var defaultTurfDef = _objectTree.GetTreeEntry(_defaultTurf.Type).ObjectDefinition;
 
@@ -441,7 +412,7 @@ public sealed partial class DreamMapManager : IDreamMapManager {
         if (mapObject.VarOverrides?.Count > 0) {
             definition = new DreamObjectDefinition(definition);
 
-            foreach (KeyValuePair<string, object> varOverride in mapObject.VarOverrides) {
+            foreach (KeyValuePair<string, object?> varOverride in mapObject.VarOverrides) {
                 if (definition.HasVariable(varOverride.Key)) {
                     using var overrideValue = _objectTree.GetDreamValueFromJsonElement(varOverride.Value);
 
@@ -542,6 +513,7 @@ public interface IDreamMapManager {
     public void SetAreaAppearance(DreamObjectArea area, MutableAppearance appearance);
     public bool TryGetCellAt(Vector2i pos, int z, [NotNullWhen(true)] out Cell? cell);
     public bool TryGetTurfAt(Vector2i pos, int z, [NotNullWhen(true)] out DreamObjectTurf? turf);
+    public DreamList CreateTurfsBlock(int startX, int startY, int startZ, int endX, int endY, int endZ);
     public void SetZLevels(int levels);
     public void SetWorldSize(Vector2i size);
     public EntityUid GetZLevelEntity(int z);
